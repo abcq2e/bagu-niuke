@@ -13,12 +13,13 @@ spring:
       base-url: http://localhost:11434
       chat:
         model: gemma3:1b
-    mcp:
-      client:
-        sse:
-          connections:
-            server1:
-              url: http://localhost:8127
+# 临时注释掉，便于大家开发调试和部署
+#    mcp:
+#      client:
+#        sse:
+#          connections:
+#            server1:
+#              url: http://localhost:8127
 #        stdio:
 #          servers-configuration: classpath:mcp-servers.json
 #    vectorstore:
