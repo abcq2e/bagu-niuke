@@ -1,44 +1,88 @@
 spring:
   application:
-    name: yu-ai-agent
+    name: qian-ai-agent
   profiles:
     active: local
-# 临时注释掉，便于大家开发调试和部署（实际填写 PgVector 数据库信息）
-#  datasource:
-#    url: xxx
-#    username: root
-#    password: 123456
+  # SSE 异步请求超时配置（5 分钟）
+  mvc:
+    async:
+      request-timeout: 300000
+  cloud:
+    compatibility-verifier:
+      enabled: false
+    sentinel:
+      transport:
+        dashboard: 127.0.0.1:8080
+        port: 8719
+      eager: true
+  # ===== MySQL 数据库配置（用户登录注册）=====
+  datasource:
+    url: jdbc:mysql://localhost:3307/yu_ai_agent?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&createDatabaseIfNotExist=true
+    username: root
+    password: ${SPRING_DATASOURCE_PASSWORD:12qw!@QW}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  # ===== Redis 缓存配置（Task 9 会用到）=====
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8      # 最大连接数
+          max-idle: 8        # 最大空闲连接数
+          min-idle: 2        # 最小空闲连接数
+          max-wait: 1000ms   # 获取连接最大等待时间
+  # ===== Neo4j 图数据库配置 =====
+  neo4j:
+    uri: bolt://localhost:7687
+    authentication:
+      username: neo4j
+      password: ${SPRING_NEO4J_AUTHENTICATION_PASSWORD:neo4j123456}
   ai:
+    openai:
+      api-key: ${SPRING_AI_OPENAI_API_KEY:sk-cb02e6e21c3a47a3ba02c873f854efaa}
+      base-url: ${SPRING_AI_OPENAI_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: deepseek-chat
     dashscope:
-      # 需要替换为你自己的 key
-      api-key: your-api-key
+      api-key: ${SPRING_AI_DASHSCOPE_API_KEY:sk-b6c5732fd06a4a5aa7ab0f75145e2df6}
       chat:
         options:
           model: qwen-plus
-    ollama:
-      base-url: http://localhost:11434
-      chat:
-        model: gemma3:1b
-# 临时注释掉，便于大家开发调试和部署（实际需要启动 MCP 服务）
-#    mcp:
-#      client:
-#        sse:
-#          connections:
-#            server1:
-#              url: http://localhost:8127
-#        stdio:
-#          servers-configuration: classpath:mcp-servers.json
-# 临时注释掉，便于大家开发调试和部署（实际需要启动 PgVector 数据库）
-#    vectorstore:
-#      pgvector:
-#        index-type: HNSW
-#        dimensions: 1536
-#        distance-type: COSINE_DISTANCE
-#        max-document-batch-size: 10000 # Optional: Maximum number of documents per batch
+      embedding:
+        options:
+          model: text-embedding-v2
+    # ===== PGVector 向量数据库持久化（独立于 MySQL 的 PostgreSQL）=====
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        dimensions: 1536
+        distance-type: COSINE_DISTANCE
+        max-document-batch-size: 10000
+        initialize-schema: true
+# PGVector 专属数据源配置（和上面的 MySQL 数据源互不影响）
+pgvector:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/yu_ai_agent
+    username: postgres
+    password: yu_ai_agent_2026
+    driver-class-name: org.postgresql.Driver
+  neo4j:
+    uri: bolt://localhost:7687
+    authentication:
+      username: neo4j
+      password: ${SPRING_NEO4J_AUTHENTICATION_PASSWORD:neo4j123456}
 server:
   port: 8123
   servlet:
     context-path: /api
+  # SSE 长连接超时配置
+  tomcat:
+    connection-timeout: 300000
 # springdoc-openapi config
 springdoc:
   swagger-ui:
@@ -50,17 +94,46 @@ springdoc:
   group-configs:
     - group: 'default'
       paths-to-match: '/**'
-      packages-to-scan: com.yupi.yuaiagent.controller
-# knife4j config
-knife4j:
-  enable: true
-  setting:
-    language: zh_cn
-# searchAPI
+      packages-to-scan: com.qian.qianaiagent.controller
+# Tavily 联网搜索 API（专为 AI Agent 设计）
 search-api:
-  # 需要替换为你自己的 key
-  api-key: 你的 API Key
+  api-key: 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
 # 修改日志级别，查看 Spring AI 更多调用细节
 logging:
   level:
     org.springframework.ai: DEBUG
+    com.qian.qianaiagent.mapper: DEBUG   # 打印 MyBatis SQL 日志
+
+# ===== 应用监控 Actuator 配置（Task 10 会用到）=====
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics  # 🔴 移除 env/loggers 防止泄露敏感信息
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always  # 显示详细健康信息
+  info:
+    env:
+      enabled: true
+    build:
+      enabled: true
+    git:
+      enabled: true
+    java:
+      enabled: true
+    os:
+      enabled: true
+
+# ===== JWT 配置（用户登录令牌）=====
+jwt:
+  secret: ${JWT_SECRET:qian-ai-agent-jwt-secret-key-2026-must-be-at-least-256-bits-long}  # 令牌的签名密钥（环境变量 JWT_SECRET 可覆盖）
+  expiration: 604800000  # 令牌过期时间，7天 = 7 * 24 * 60 * 60 * 1000 毫秒
+
+# ===== 应用信息（/actuator/info 端点读取）=====
+info:
+  app:
+    name: qian-ai-agent
+    version: 0.0.1
+    description: AI 智能体面试官

@@ -1,0 +1,32 @@
+{
+    "agentName": "demo-agent",
+    "startTime": 1783838512801,
+    "endTime": 1783838513524,
+    "finalState": "FINISHED",
+    "steps": [
+        {
+            "stepNumber": 1,
+            "stepType": "LLM_CALL",
+            "whatHappened": "LLM 推理：用户想搜索'今天天气'，决定调用 WebSearchTool",
+            "timestamp": 1783838513034,
+            "durationMs": 233,
+            "resultSummary": "LLM 推理：用户想搜索'今天天气'，决定调用 WebSearchTool"
+        },
+        {
+            "stepNumber": 2,
+            "stepType": "TOOL_CALL",
+            "whatHappened": "调用 WebSearchTool.searchWeb('北京今天天气') → 返回 3 条搜索结果",
+            "timestamp": 1783838513239,
+            "durationMs": 204,
+            "resultSummary": "调用 WebSearchTool.searchWeb('北京今天天气') → 返回 3 条搜索结果"
+        },
+        {
+            "stepNumber": 3,
+            "stepType": "LLM_CALL",
+            "whatHappened": "LLM 总结：根据搜索结果，今天北京晴，25°C",
+            "timestamp": 1783838513524,
+            "durationMs": 285,
+            "resultSummary": "LLM 总结：根据搜索结果，今天北京晴，25°C"
+        }
+    ]
+}

@@ -1,0 +1,23 @@
+{
+  "caseName": "知识库RAG检索",
+  "query": "Spring AI 1.0 版本有哪些新特性？",
+  "createdAt": "2026-06-24T10:00:00",
+  "expectedBehavior": {
+    "expectedToolCalls": [
+      {
+        "toolName": "ragSearch",
+        "paramContains": "Spring AI 1.0",
+        "resultContains": null
+      }
+    ],
+    "expectedResponseKeywords": [
+      "Spring AI",
+      "1.0",
+      "特性"
+    ],
+    "maxToolCalls": 5
+  },
+  "baselineDeterministicScore": -1,
+  "baselineRubricScore": -1,
+  "notes": "⚠️ 分数为 -1 表示尚未人工确认。请跑一次 Agent，确认结果正确后更新分数。基于 GPT-4o 2026-06 版本建立。"
+}

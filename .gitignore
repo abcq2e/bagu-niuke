@@ -1,6 +1,8 @@
 ### CUSTOM ###
 application-local.yml
 tmp
+.env
+data/
 
 HELP.md
 target/
