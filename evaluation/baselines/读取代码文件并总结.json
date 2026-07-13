@@ -1,0 +1,23 @@
+{
+  "caseName": "读取代码文件并总结",
+  "query": "帮我读一下 src/main/java/com/yupi/yuaiagent/tools/WebSearchTool.java 这个文件，总结它的功能",
+  "createdAt": "2026-06-24T10:00:00",
+  "expectedBehavior": {
+    "expectedToolCalls": [
+      {
+        "toolName": "fileRead",
+        "paramContains": "WebSearchTool.java",
+        "resultContains": null
+      }
+    ],
+    "expectedResponseKeywords": [
+      "WebSearchTool",
+      "搜索",
+      "工具"
+    ],
+    "maxToolCalls": 3
+  },
+  "baselineDeterministicScore": -1,
+  "baselineRubricScore": -1,
+  "notes": "⚠️ 分数为 -1 表示尚未人工确认。请跑一次 Agent，确认结果正确后更新分数。基于 GPT-4o 2026-06 版本建立。"
+}

@@ -1,0 +1,23 @@
+{
+  "caseName": "搜索Spring AI教程",
+  "query": "帮我搜一下Spring AI最新教程，要有代码示例的那种",
+  "createdAt": "2026-06-24T10:00:00",
+  "expectedBehavior": {
+    "expectedToolCalls": [
+      {
+        "toolName": "webSearch",
+        "paramContains": "Spring AI",
+        "resultContains": null
+      }
+    ],
+    "expectedResponseKeywords": [
+      "Spring AI",
+      "教程",
+      "代码"
+    ],
+    "maxToolCalls": 5
+  },
+  "baselineDeterministicScore": -1,
+  "baselineRubricScore": -1,
+  "notes": "⚠️ 分数为 -1 表示尚未人工确认。请跑一次 Agent，确认结果正确后更新分数。基于 GPT-4o 2026-06 版本建立。"
+}

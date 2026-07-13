@@ -1,0 +1,62 @@
+version: '3.8'
+
+services:
+  # ========== PostgreSQL + PGVector 向量数据库 ==========
+  pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: yu-ai-pgvector
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: yu_ai_agent_2026
+      POSTGRES_DB: yu_ai_agent
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  # ========== Neo4j 图数据库（对话知识图谱分析）==========
+  neo4j:
+    image: neo4j:5
+    container_name: yu-ai-neo4j
+    ports:
+      - "7474:7474"   # HTTP (Neo4j Browser)
+      - "7687:7687"   # Bolt (应用连接)
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-yuaiagent123}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+
+  # ========== Redis 缓存（Task 9 会用到）==========
+  redis:
+    image: redis:7-alpine
+    container_name: yu-ai-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # ========== MySQL 数据库（用户登录注册）==========
+  # 注意：如果已有外部 MySQL 在 13306 端口运行（当前环境是 xfg-studio/mysql:8.0.32），
+  # 这里的端口映射要避开，或者不用这个 service，直接连已有容器
+  mysql:
+    image: mysql:8.0
+    container_name: yu-ai-mysql
+    ports:
+      - "3307:3306"   # 避开已有的 13306 端口
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-yuaiagent123}
+      MYSQL_DATABASE: yu_ai_agent
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+volumes:
+  pgvector_data:
+  neo4j_data:
+  neo4j_logs:
+  mysql_data:
+  redis_data:
