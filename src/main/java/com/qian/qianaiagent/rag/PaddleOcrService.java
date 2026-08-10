@@ -1,6 +1,7 @@
 package com.qian.qianaiagent.rag;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import java.util.Map;
  * PaddleOCR HTTP 调用服务
  * <p>
  * 需要先启动 PaddleOCR Python 服务：python paddle_ocr_server.py
+ * OCR 服务地址通过 application.yml 中的 paddle.ocr.base-url 配置，
  * 默认地址：http://localhost:8866
  */
 @Service
@@ -21,8 +23,14 @@ public class PaddleOcrService {
 
     private final RestClient restClient = RestClient.create();
 
-    private static final String OCR_URL = "http://localhost:8866/ocr";
-    private static final String HEALTH_URL = "http://localhost:8866/health";
+    private final String ocrUrl;
+    private final String healthUrl;
+
+    public PaddleOcrService(
+            @Value("${paddle.ocr.base-url:http://localhost:8866}") String baseUrl) {
+        this.ocrUrl = baseUrl + "/ocr";
+        this.healthUrl = baseUrl + "/health";
+    }
 
     /**
      * 识别图片中的文字
@@ -45,7 +53,7 @@ public class PaddleOcrService {
 
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restClient.post()
-                    .uri(OCR_URL)
+                    .uri(ocrUrl)
                     .contentType(MediaType.MULTIPART_FORM_DATA)
                     .body(body)
                     .retrieve()
@@ -75,7 +83,7 @@ public class PaddleOcrService {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response = restClient.get()
-                    .uri(HEALTH_URL)
+                    .uri(healthUrl)
                     .retrieve()
                     .body(Map.class);
             return response != null && "ok".equals(response.get("status"));

@@ -4,7 +4,9 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.serializer.GenericJackson2JsonRedisSerializer;
 import org.springframework.data.redis.serializer.RedisSerializer;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 /**
  * Redis 配置类
@@ -58,6 +60,9 @@ public class RedisConfig {
     /**
      * 创建并配置 RedisTemplate
      *
+     * Key 用 StringRedisSerializer → 人类可读
+     * Value 用 GenericJackson2JsonRedisSerializer → JSON 格式，支持复杂对象
+     *
      * @param connectionFactory Redis 连接工厂（Spring Boot 自动创建）
      * @return 配置好的 RedisTemplate
      */
@@ -66,30 +71,19 @@ public class RedisConfig {
         RedisTemplate<String, Object> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
 
-        // ===== 🎯 Task 9: 你来配置序列化器 =====
-        // 步骤：
-        // 1. 创建 StringRedisSerializer（Key 用）
-        // 2. 选择合适的 Value 序列化器（GenericJackson2JsonRedisSerializer 最简单）
-        // 3. 设置给 template
-        //
-        // 💡 思考：为什么先 setConnectionFactory 再 set 序列化器？
-        //    （提示：顺序不重要，但 afterPropertiesSet() 必须在最后调用）
-
-        // 你的代码写在这里 ↓
-
         // Key 用 String 序列化（保证可读性）
-        // 提示: template.setKeySerializer(??);
+        RedisSerializer<String> stringSerializer = new StringRedisSerializer();
+        template.setKeySerializer(stringSerializer);
 
         // Value 用 JSON 序列化（支持对象，人类可读）
-        // 提示: template.setValueSerializer(??);
+        RedisSerializer<Object> jsonSerializer = new GenericJackson2JsonRedisSerializer();
+        template.setValueSerializer(jsonSerializer);
 
         // HashKey 也用 String 序列化
-        // 提示: template.setHashKeySerializer(??);
+        template.setHashKeySerializer(stringSerializer);
 
         // HashValue 也用 JSON 序列化
-        // 提示: template.setHashValueSerializer(??);
-
-        // 你的代码写在这里 ↑
+        template.setHashValueSerializer(jsonSerializer);
 
         // 让上面的配置生效
         template.afterPropertiesSet();

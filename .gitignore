@@ -3,6 +3,14 @@ application-local.yml
 tmp
 .env
 data/
+.knowledge-catalog/
+.ability-profiles/
+logs/
+*.log
+.claude/
+.quiz-cursor/
+.review-cursor/
+.superpowers/
 
 HELP.md
 target/

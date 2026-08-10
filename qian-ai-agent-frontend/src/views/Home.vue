@@ -3,7 +3,9 @@
     <!-- 导航 -->
     <nav class="nav">
       <div class="nav-brand">
-        <span class="nav-logo">🧠</span>
+        <span class="nav-logo">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></svg>
+        </span>
         <span class="nav-title">AI 技术面试官</span>
       </div>
       <a href="https://github.com" target="_blank" class="nav-link">
@@ -112,7 +114,7 @@ useHead({ title: 'AI 技术面试官', meta: [{ name: 'description', content: '�
   padding: 20px 40px; max-width: 1100px; margin: 0 auto;
 }
 .nav-brand { display: flex; align-items: center; gap: 10px; }
-.nav-logo { font-size: 26px; }
+.nav-logo { display: flex; align-items: center; color: #4f46e5; }
 .nav-title { font-size: 17px; font-weight: 700; color: #1a1a2e; }
 .nav-link {
   display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 14px;

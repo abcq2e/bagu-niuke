@@ -3,7 +3,11 @@ package com.qian.qianaiagent.controller;
 import com.qian.qianaiagent.agent.YuManus;
 import com.qian.qianaiagent.annotation.RateLimit;
 import com.qian.qianaiagent.app.QuizApp;
+import com.qian.qianaiagent.app.UserAbilityProfile;
+import com.qian.qianaiagent.app.UserAbilityService;
+import com.qian.qianaiagent.app.WrongQuestionReviewService;
 import com.qian.qianaiagent.chatmemory.FileBasedChatMemory;
+import com.qian.qianaiagent.context.UserContext;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -13,11 +17,17 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
+
+import java.util.concurrent.Executor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +48,12 @@ public class AiController {
     @Resource
     private QuizApp quizApp;
 
+    @Resource
+    private UserAbilityService userAbilityService;
+
+    @Resource
+    private WrongQuestionReviewService wrongQuestionReviewService;
+
     /** 每次请求获取新的 Agent 实例（Prototype Scope），避免多请求间状态冲突 */
     @Resource
     private ObjectProvider<YuManus> yuManusProvider;
@@ -49,6 +65,9 @@ public class AiController {
     /** Agent 多轮对话记忆（滑动窗口 + 摘要压缩） */
     @Resource(name = "chatMemory")
     private ChatMemory agentChatMemory;
+
+    @Resource(name = "taskExecutor")
+    private Executor taskExecutor;
 
     /** 消息最大长度 */
     private static final int MAX_MESSAGE_LENGTH = 2000;
@@ -81,11 +100,68 @@ public class AiController {
         final String finalChatId = (chatId == null || chatId.isBlank())
                 ? "chat_" + System.currentTimeMillis()
                 : chatId;
-        log.info("📨 收到对话请求: message={}, chatId={}", message, finalChatId);
-        return quizApp.doUnifiedChat(message, finalChatId)
+        // 🔴 在进入响应式流之前捕获 userId（ThreadLocal 在异步线程中不可用）
+        final Long userId = UserContext.getCurrentUserId();
+        log.info("📨 收到对话请求: message={}, chatId={}, userId={}", message, finalChatId, userId);
+        // 🔴 [P2] 使用 taskExecutor 线程池处理 SSE 流（替代 boundedElastic，线程参数可控）
+        return quizApp.doUnifiedChat(message, finalChatId, userId)
+                .concatWith(Flux.just("[DONE]"))
+                .subscribeOn(Schedulers.fromExecutor(taskExecutor))
                 .doOnError(e -> log.error("❌ SSE 流异常: {}", e.getMessage(), e))
-                .doOnComplete(() -> log.info("✅ SSE 流完成: chatId={}",
-                        finalChatId));
+                .doOnComplete(() -> {
+                    // 🔴 流结束后同步保存画像（含 userId 冗余，跨会话恢复用）
+                    userAbilityService.saveProfile(finalChatId, userId);
+                    log.info("✅ SSE 流完成: chatId={}", finalChatId);
+                });
+    }
+
+    /**
+     * 🔴 错题复习对话 SSE 流式。
+     * <p>
+     * chatId 格式：review_{原始面试chatId}。后端通过 chatId 前缀识别复习会话，
+     * 用 sourceChatId 参数读取原始面试的能力画像。
+     *
+     * @param message      用户消息
+     * @param chatId       复习会话 ID（review_xxx）
+     * @param sourceChatId 原始面试 chatId（读画像用）
+     */
+    @RateLimit(maxRequests = 10, timeWindow = 60)
+    @GetMapping(value = "/review/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public Flux<String> doReviewChat(@RequestParam String message,
+                                     @RequestParam(required = false) String chatId,
+                                     @RequestParam(required = false) String sourceChatId) {
+        if (message == null || message.isBlank()) {
+            return Flux.just("[ERROR] 消息不能为空", "[DONE]");
+        }
+        if (message.length() > MAX_MESSAGE_LENGTH) {
+            return Flux.just("[ERROR] 消息过长，最多 " + MAX_MESSAGE_LENGTH + " 字", "[DONE]");
+        }
+        final String finalChatId = (chatId == null || chatId.isBlank())
+                ? "review_" + System.currentTimeMillis()
+                : chatId;
+        // sourceChatId 若未传，尝试从 chatId 推导（去掉 review_ 前缀）
+        final String finalSourceId = (sourceChatId != null && !sourceChatId.isBlank())
+                ? sourceChatId
+                : (finalChatId.startsWith("review_") ? finalChatId.substring(7) : finalChatId);
+        final Long userId = UserContext.getCurrentUserId();
+        log.info("📨 收到复习对话请求: message={}, chatId={}, sourceChatId={}",
+                message, finalChatId, finalSourceId);
+        return wrongQuestionReviewService.doReviewChat(message, finalChatId, finalSourceId, userId)
+                .concatWith(Flux.just("[DONE]"))
+                .subscribeOn(Schedulers.fromExecutor(taskExecutor))
+                .doOnComplete(() -> {
+                    userAbilityService.saveProfile(finalSourceId, userId);
+                    log.info("✅ 复习 SSE 流完成: chatId={}", finalChatId);
+                })
+                .doOnError(e -> log.error("❌ 复习 SSE 流异常: {}", e.getMessage(), e));
+    }
+
+    /**
+     * 🔴 获取错题池预览（方向列表 + 各方向题数）。
+     */
+    @GetMapping("/review/pool/{sourceChatId}")
+    public java.util.Map<String, Object> getReviewPool(@PathVariable String sourceChatId) {
+        return wrongQuestionReviewService.getPoolPreview(sourceChatId);
     }
 
     /**
@@ -209,6 +285,74 @@ public class AiController {
         }
         fileBasedChatMemory.updateTitle(chatId, title.trim());
         return Map.of("success", true, "chatId", chatId, "title", title.trim());
+    }
+
+    // ===== 个性化画像接口 =====
+
+    /**
+     * 获取用户能力画像（雷达图数据）— 返回展示清洗后的副本
+     * <p>
+     * 清洗规则：过滤评价词（"态度敷衍""概念混淆"等）、跨方向词，
+     * 确保前端展示的薄弱项均为具体可学习的技术知识点。
+     * 不修改历史 .ability-profiles/*.json 文件。
+     */
+    @GetMapping("/quiz/profile/{chatId}")
+    public UserAbilityProfile getProfile(@PathVariable String chatId) {
+        return userAbilityService.getDisplayProfile(chatId, UserContext.getCurrentUserId());
+    }
+
+    /**
+     * LLM 生成文字版考察总结
+     */
+    @GetMapping("/quiz/profile/{chatId}/summary")
+    public java.util.Map<String, String> getProfileSummary(@PathVariable String chatId) {
+        String summary = userAbilityService.buildSummary(chatId);
+        String aiSuggestion = "";
+        try {
+            // 调用 LLM 生成学习建议
+            aiSuggestion = userAbilityService.generateAISuggestion(chatId);
+        } catch (Exception e) {
+            aiSuggestion = "基于您的考察数据生成个性化建议失败，请稍后重试。";
+            log.warn("生成 AI 建议失败: {}", e.getMessage());
+        }
+        return java.util.Map.of(
+                "summary", summary,
+                "aiSuggestion", aiSuggestion
+        );
+    }
+
+    /**
+     * 强制清理跨方向弱点评（立即执行，不依赖自动清理）
+     */
+    @PostMapping("/quiz/profile/{chatId}/cleanup")
+    public java.util.Map<String, Object> cleanupProfile(@PathVariable String chatId) {
+        Long userId = UserContext.getCurrentUserId();
+        UserAbilityProfile profile = userAbilityService.getOrCreateProfile(chatId, userId);
+        int moved = userAbilityService.cleanCrossTopicWeakPoints(profile);
+        userAbilityService.saveProfile(chatId, userId);
+        return java.util.Map.of("success", true, "chatId", chatId, "moved", moved);
+    }
+
+    /**
+     * 🔴 [调试] 测试弱点评路由结果（不修改数据）
+     */
+    @PostMapping("/debug/route")
+    public java.util.Map<String, Object> debugRoute(
+            @RequestParam String topic,
+            @RequestBody java.util.List<String> weakPoints) {
+        java.util.Map<String, java.util.List<String>> result =
+                userAbilityService.routeWeakPointsPublic(weakPoints, topic);
+        return java.util.Map.of("topic", topic, "routed", result);
+    }
+
+    /**
+     * 重置画像（开始新一轮面试）
+     */
+    @PostMapping("/quiz/profile/{chatId}/reset")
+    public java.util.Map<String, Object> resetProfile(@PathVariable String chatId) {
+        Long userId = UserContext.getCurrentUserId();
+        userAbilityService.resetProfile(chatId, userId);
+        return java.util.Map.of("success", true, "chatId", chatId);
     }
 
     // ===== 以下为保留的旧接口，向后兼容 =====

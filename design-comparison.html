@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>错题复习 UI 设计方案对比</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: #f1f5f9; color: #1e293b; min-height: 100vh;
+  }
+  .header {
+    background: #fff; border-bottom: 1px solid #e2e8f0;
+    padding: 32px 40px; text-align: center;
+  }
+  .header h1 { font-size: 28px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+  .header p { font-size: 14px; color: #64748b; }
+
+  .container { max-width: 1400px; margin: 0 auto; padding: 32px 24px; }
+
+  .schemes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+
+  .scheme-card {
+    background: #fff; border-radius: 16px; overflow: hidden;
+    border: 2px solid #e2e8f0; transition: all .2s; cursor: pointer;
+  }
+  .scheme-card:hover { border-color: #818cf8; box-shadow: 0 8px 30px rgba(79,70,229,0.12); }
+  .scheme-card.selected { border-color: #4f46e5; box-shadow: 0 8px 30px rgba(79,70,229,0.2); }
+
+  .scheme-label {
+    padding: 14px 20px; display: flex; align-items: center; gap: 10px;
+    font-size: 15px; font-weight: 700; color: #fff;
+  }
+  .scheme-label .badge {
+    width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800;
+  }
+  .scheme-a .scheme-label { background: linear-gradient(135deg, #312e81, #4f46e5); }
+  .scheme-b .scheme-label { background: linear-gradient(135deg, #3b82f6, #6366f1); }
+  .scheme-c .scheme-label { background: linear-gradient(135deg, #1e40af, #3b82f6); }
+
+  .scheme-body { padding: 20px; }
+
+  /* ---- Common mockup layout ---- */
+  .mock-label {
+    font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 4px;
+  }
+  .mock-section { margin-bottom: 16px; }
+  .mock-section:last-child { margin-bottom: 0; }
+
+  .desc { font-size: 12px; color: #64748b; line-height: 1.6; margin-top: 12px; padding: 10px 12px; background: #f8fafc; border-radius: 8px; }
+
+  .vote-btn {
+    width: 100%; padding: 12px; margin-top: 8px; border-radius: 10px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s;
+    background: #4f46e5; color: #fff;
+  }
+  .vote-btn:hover { background: #4338ca; }
+  .vote-btn.voted { background: #10b981; }
+
+  /* ===== SCHEME A: 专注舱 ===== */
+
+  /* Sidebar card - A */
+  .a-sidebar-section { background:#f9fafb; border-radius:10px; padding:10px; }
+  .a-sidebar-card {
+    display:flex; align-items:center; gap:10px; padding:12px;
+    background: linear-gradient(135deg, #312e81, #4f46e5);
+    border-radius: 10px; color: #fff; cursor: pointer;
+  }
+  .a-sidebar-icon {
+    width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+    background: rgba(255,255,255,0.15);
+    display: flex; align-items: center; justify-content: center; font-size: 15px;
+  }
+  .a-sidebar-info { flex:1; min-width:0; }
+  .a-sidebar-title { font-size:13px; font-weight:700; }
+  .a-sidebar-meta { font-size:10px; opacity:0.8; margin-top:1px; }
+  .a-sidebar-badge {
+    font-size:10px; font-weight:700; background:rgba(255,255,255,0.2);
+    padding:3px 8px; border-radius:8px;
+  }
+
+  /* Topbar - A */
+  .a-topbar {
+    display:flex; align-items:center; gap:12px; padding:14px 24px;
+    background: linear-gradient(135deg, #1e1b4b, #312e81);
+    border-bottom: 1px solid rgba(255,255,255,0.08); color:#fff; font-size:13px;
+    border-radius: 8px;
+  }
+  .a-topbar-icon {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: rgba(255,255,255,0.12);
+    display: flex; align-items:center; justify-content:center; font-size:13px;
+  }
+  .a-topbar-title { font-weight:700; }
+  .a-topbar-dir { font-size:12px; opacity:0.7; }
+  .a-topbar-spacer { flex:1; }
+  .a-topbar-stat { display:flex; align-items:center; gap:8px; font-size:12px; opacity:0.9; }
+  .a-topbar-bar { width:80px; height:5px; background:rgba(255,255,255,0.15); border-radius:3px; overflow:hidden; }
+  .a-topbar-fill { height:100%; border-radius:3px; background:#a5b4fc; transition:width .4s; }
+
+  /* Panel entry - A */
+  .a-entry-card {
+    display:flex; align-items:center; gap:12px; padding:14px 16px;
+    background: linear-gradient(135deg, #eef2ff, #e0e7ff);
+    border: 1px solid #c7d2fe; border-radius: 10px;
+  }
+  .a-entry-icon {
+    width: 36px; height: 36px; border-radius: 9px; flex-shrink:0;
+    background: linear-gradient(135deg, #4f46e5, #6366f1);
+    color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .a-entry-info { flex:1; min-width:0; }
+  .a-entry-title { font-size:13px; font-weight:700; color:#312e81; }
+  .a-entry-desc { font-size:11px; color:#6366f1; margin-top:2px; }
+  .a-entry-btn {
+    padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600;
+    cursor:pointer; border:none; white-space:nowrap;
+    background: linear-gradient(135deg, #4f46e5, #6366f1); color:#fff;
+  }
+
+  /* ===== SCHEME B: 学习卡片 ===== */
+
+  .b-sidebar-section { background:#f9fafb; border-radius:10px; padding:10px; }
+  .b-sidebar-card {
+    display:flex; align-items:center; gap:10px; padding:12px;
+    background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 10px;
+    cursor: pointer;
+  }
+  .b-sidebar-icon {
+    width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
+    background: #dbeafe; color: #3b82f6;
+    display: flex; align-items: center; justify-content: center; font-size: 14px;
+  }
+  .b-sidebar-info { flex:1; min-width:0; }
+  .b-sidebar-title { font-size:13px; font-weight:700; color:#1e40af; }
+  .b-sidebar-meta { font-size:10px; color:#3b82f6; margin-top:1px; }
+  .b-sidebar-badge {
+    font-size:10px; font-weight:700; color:#1e40af; background:#dbeafe;
+    padding:3px 8px; border-radius:8px;
+  }
+
+  .b-topbar {
+    display:flex; align-items:center; gap:12px; padding:12px 24px;
+    background: linear-gradient(to right, #eff6ff, #f9fafb);
+    border-bottom: 1.5px solid #bfdbfe; font-size:13px;
+    border-radius: 8px;
+  }
+  .b-topbar-icon {
+    width: 30px; height: 30px; border-radius: 7px;
+    background: #dbeafe; color:#3b82f6;
+    display: flex; align-items:center; justify-content:center; font-size:13px;
+  }
+  .b-topbar-title { font-weight:700; color:#1e40af; }
+  .b-topbar-dir { font-size:12px; color:#64748b; }
+  .b-topbar-spacer { flex:1; }
+  .b-topbar-stat { display:flex; align-items:center; gap:8px; font-size:12px; color:#475569; }
+  .b-topbar-bar { width:80px; height:6px; background:#dbeafe; border-radius:3px; overflow:hidden; }
+  .b-topbar-fill { height:100%; border-radius:3px; background: linear-gradient(to right, #3b82f6, #6366f1); }
+
+  .b-entry-card {
+    display:flex; align-items:center; gap:12px; padding:14px 16px;
+    background: #fff; border: 1.5px solid #bfdbfe; border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(59,130,246,0.06);
+  }
+  .b-entry-icon {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink:0;
+    background: #eff6ff; color:#3b82f6;
+    display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .b-entry-info { flex:1; min-width:0; }
+  .b-entry-title { font-size:13px; font-weight:700; color:#0f172a; }
+  .b-entry-desc { font-size:11px; color:#94a3b8; margin-top:2px; }
+  .b-entry-btn {
+    padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600;
+    cursor:pointer; border:none; white-space:nowrap;
+    background:#3b82f6; color:#fff;
+  }
+
+  /* ===== SCHEME C: 仪表盘 ===== */
+
+  .c-sidebar-section { background:#f9fafb; border-radius:10px; padding:10px; }
+  .c-sidebar-card {
+    display:flex; align-items:center; gap:10px; padding:14px 12px;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+    cursor: pointer;
+  }
+  .c-sidebar-stats { display:flex; gap:8px; flex:1; }
+  .c-stat-item { text-align:center; flex:1; }
+  .c-stat-num { font-size:18px; font-weight:800; color:#1e40af; line-height:1; }
+  .c-stat-label { font-size:9px; color:#94a3b8; margin-top:2px; text-transform:uppercase; letter-spacing:.3px; }
+  .c-stat-divider { width:1px; background:#e2e8f0; }
+  .c-sidebar-badge-pill {
+    font-size:10px; font-weight:700; color:#fff; background: linear-gradient(135deg, #2563eb, #4f46e5);
+    padding:4px 10px; border-radius:12px; white-space:nowrap;
+  }
+
+  .c-topbar {
+    display:flex; align-items:center; gap:14px; padding:16px 24px;
+    background:#fff; border-bottom:1px solid #e2e8f0; font-size:13px;
+    border-radius: 8px;
+  }
+  .c-topbar-ring {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: conic-gradient(#4f46e5 0deg 120deg, #e2e8f0 120deg 360deg);
+    display:flex; align-items:center; justify-content:center; position:relative;
+  }
+  .c-topbar-ring-inner {
+    width: 30px; height: 30px; border-radius: 50%; background:#fff;
+    display:flex; align-items:center; justify-content:center;
+    font-size:10px; font-weight:800; color:#4f46e5;
+  }
+  .c-topbar-title { font-weight:700; color:#0f172a; }
+  .c-topbar-dir { font-size:12px; color:#64748b; }
+  .c-topbar-spacer { flex:1; }
+  .c-topbar-pills { display:flex; gap:6px; }
+  .c-pill {
+    padding:4px 10px; border-radius:12px; font-size:11px; font-weight:600;
+    background:#f1f5f9; color:#64748b;
+  }
+  .c-pill.active { background:#eef2ff; color:#4f46e5; }
+
+  .c-entry-card {
+    display:flex; align-items:center; gap:12px; padding:14px 16px;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+  }
+  .c-entry-stats { display:flex; gap:14px; flex:1; }
+  .c-entry-stat { text-align:center; }
+  .c-entry-stat-val { font-size:16px; font-weight:800; color:#1e40af; line-height:1; }
+  .c-entry-stat-lbl { font-size:9px; color:#94a3b8; text-transform:uppercase; letter-spacing:.3px; }
+  .c-entry-btn {
+    padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600;
+    cursor:pointer; border:none; white-space:nowrap;
+    background: linear-gradient(135deg, #2563eb, #4f46e5); color:#fff;
+  }
+
+  @media (max-width: 1100px) {
+    .schemes { grid-template-columns: 1fr; }
+  }
+
+  .selected-indicator {
+    display: none; text-align: center; padding: 6px;
+    font-size: 12px; font-weight: 600; color: #4f46e5;
+  }
+  .scheme-card.selected .selected-indicator { display: block; }
+
+  .final-choice {
+    margin-top: 32px; padding: 20px 24px;
+    background: #fff; border-radius: 16px;
+    border: 2px dashed #c7d2fe; text-align: center;
+  }
+  .final-choice h3 { font-size: 16px; color: #4f46e5; margin-bottom: 4px; }
+  .final-choice p { font-size: 13px; color: #64748b; }
+
+  /* 特性标签 */
+  .feature-tags { display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; }
+  .ftag { font-size:10px; padding:2px 8px; border-radius:10px; font-weight:500; }
+  .ftag-good { background:#ecfdf5; color:#059669; }
+  .ftag-warn { background:#fffbeb; color:#d97706; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>错题复习板块 — UI 设计方案对比</h1>
+  <p>三种方案均采用蓝色/indigo 色调，设计风格不同。点击卡片选中你喜欢的方案。</p>
+</div>
+
+<div class="container">
+  <div class="schemes">
+
+    <!-- ========== SCHEME A: 专注舱 ========== -->
+    <div class="scheme-card scheme-a" id="card-a" onclick="selectScheme('A')">
+      <div class="scheme-label">
+        <span class="badge">A</span> 专注舱风格
+      </div>
+      <div class="scheme-body">
+
+        <!-- 侧边栏 -->
+        <div class="mock-section">
+          <div class="mock-label">📌 侧边栏卡片</div>
+          <div class="a-sidebar-section">
+            <div class="a-sidebar-card">
+              <div class="a-sidebar-icon">📋</div>
+              <div class="a-sidebar-info">
+                <div class="a-sidebar-title">错题复习</div>
+                <div class="a-sidebar-meta">3 方向 · 12 道错题</div>
+              </div>
+              <span class="a-sidebar-badge">12</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 顶栏 -->
+        <div class="mock-section">
+          <div class="mock-label">📌 复习顶栏</div>
+          <div class="a-topbar">
+            <div class="a-topbar-icon">📋</div>
+            <span class="a-topbar-title">错题复习</span>
+            <span class="a-topbar-dir">· Java并发</span>
+            <span class="a-topbar-spacer"></span>
+            <span class="a-topbar-stat">
+              <span class="a-topbar-bar"><span class="a-topbar-fill" style="width:33%"></span></span>
+              <span>4/12</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- 能力面板入口 -->
+        <div class="mock-section">
+          <div class="mock-label">📌 能力面板入口</div>
+          <div class="a-entry-card">
+            <div class="a-entry-icon">📋</div>
+            <div class="a-entry-info">
+              <div class="a-entry-title">错题复习</div>
+              <div class="a-entry-desc">3 方向 · 12 道错题待复习</div>
+            </div>
+            <button class="a-entry-btn">进入复习</button>
+          </div>
+        </div>
+
+        <div class="feature-tags">
+          <span class="ftag ftag-good">✦ 模式切换感强</span>
+          <span class="ftag ftag-good">✦ 视觉冲击力</span>
+          <span class="ftag ftag-warn">△ 需适配暗色文字</span>
+        </div>
+        <div class="desc">
+          <strong>核心特点：</strong>深色 indigo 渐变包围，进入复习像"切换到一个专注空间"。和灰色面试区形成最强对比，仪式感拉满。
+        </div>
+      </div>
+      <div class="selected-indicator">✅ 已选择方案 A</div>
+    </div>
+
+    <!-- ========== SCHEME B: 学习卡片 ========== -->
+    <div class="scheme-card scheme-b" id="card-b" onclick="selectScheme('B')">
+      <div class="scheme-label">
+        <span class="badge">B</span> 学习卡片风格
+      </div>
+      <div class="scheme-body">
+
+        <div class="mock-section">
+          <div class="mock-label">📌 侧边栏卡片</div>
+          <div class="b-sidebar-section">
+            <div class="b-sidebar-card">
+              <div class="b-sidebar-icon">📋</div>
+              <div class="b-sidebar-info">
+                <div class="b-sidebar-title">错题复习</div>
+                <div class="b-sidebar-meta">3 方向 · 12 道错题</div>
+              </div>
+              <span class="b-sidebar-badge">12</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">📌 复习顶栏</div>
+          <div class="b-topbar">
+            <div class="b-topbar-icon">📋</div>
+            <span class="b-topbar-title">错题复习</span>
+            <span class="b-topbar-dir">· Java并发</span>
+            <span class="b-topbar-spacer"></span>
+            <span class="b-topbar-stat">
+              <span class="b-topbar-bar"><span class="b-topbar-fill" style="width:33%"></span></span>
+              <span>4/12</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">📌 能力面板入口</div>
+          <div class="b-entry-card">
+            <div class="b-entry-icon">📋</div>
+            <div class="b-entry-info">
+              <div class="b-entry-title">错题复习</div>
+              <div class="b-entry-desc">3 方向 · 12 道错题待复习</div>
+            </div>
+            <button class="b-entry-btn">进入复习</button>
+          </div>
+        </div>
+
+        <div class="feature-tags">
+          <span class="ftag ftag-good">✦ 温和清新</span>
+          <span class="ftag ftag-good">✦ 不刺眼</span>
+          <span class="ftag ftag-good">✦ 和整体协调</span>
+        </div>
+        <div class="desc">
+          <strong>核心特点：</strong>浅蓝底 + 蓝色点缀，清爽的学术风格。和 app 整体设计融合得最自然，不喧宾夺主但明显可辨。
+        </div>
+      </div>
+      <div class="selected-indicator">✅ 已选择方案 B</div>
+    </div>
+
+    <!-- ========== SCHEME C: 仪表盘 ========== -->
+    <div class="scheme-card scheme-c" id="card-c" onclick="selectScheme('C')">
+      <div class="scheme-label">
+        <span class="badge">C</span> 仪表盘风格
+      </div>
+      <div class="scheme-body">
+
+        <div class="mock-section">
+          <div class="mock-label">📌 侧边栏卡片</div>
+          <div class="c-sidebar-section">
+            <div class="c-sidebar-card">
+              <div class="c-sidebar-stats">
+                <div class="c-stat-item">
+                  <div class="c-stat-num">3</div>
+                  <div class="c-stat-label">方向</div>
+                </div>
+                <div class="c-stat-divider"></div>
+                <div class="c-stat-item">
+                  <div class="c-stat-num">12</div>
+                  <div class="c-stat-label">错题</div>
+                </div>
+              </div>
+              <span class="c-sidebar-badge-pill">复习 →</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">📌 复习顶栏</div>
+          <div class="c-topbar">
+            <div class="c-topbar-ring">
+              <div class="c-topbar-ring-inner">33%</div>
+            </div>
+            <span class="c-topbar-title">错题复习</span>
+            <span class="c-topbar-dir">· Java并发</span>
+            <span class="c-topbar-spacer"></span>
+            <div class="c-topbar-pills">
+              <span class="c-pill active">并发</span>
+              <span class="c-pill">Spring</span>
+              <span class="c-pill">JVM</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">📌 能力面板入口</div>
+          <div class="c-entry-card">
+            <div class="c-entry-stats">
+              <div class="c-entry-stat">
+                <div class="c-entry-stat-val">3</div>
+                <div class="c-entry-stat-lbl">方向</div>
+              </div>
+              <div class="c-entry-stat">
+                <div class="c-entry-stat-val">12</div>
+                <div class="c-entry-stat-lbl">待复习</div>
+              </div>
+              <div class="c-entry-stat">
+                <div class="c-entry-stat-val">0</div>
+                <div class="c-entry-stat-lbl">已清除</div>
+              </div>
+            </div>
+            <button class="c-entry-btn">进入复习</button>
+          </div>
+        </div>
+
+        <div class="feature-tags">
+          <span class="ftag ftag-good">✦ 数据一目了然</span>
+          <span class="ftag ftag-good">✦ 环形进度醒目</span>
+          <span class="ftag ftag-warn">△ 占空间较多</span>
+        </div>
+        <div class="desc">
+          <strong>核心特点：</strong>突出数字和进度可视化。环形进度、分段标签、多维度统计，适合数据驱动的成就感体验。
+        </div>
+      </div>
+      <div class="selected-indicator">✅ 已选择方案 C</div>
+    </div>
+
+  </div>
+
+  <div class="final-choice" id="final-choice" style="display:none;">
+    <h3 id="choice-text"></h3>
+    <p>关闭此页面，回到终端告诉我你的选择。</p>
+  </div>
+</div>
+
+<script>
+function selectScheme(letter) {
+  document.querySelectorAll('.scheme-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('card-' + letter.toLowerCase()).classList.add('selected');
+  const final = document.getElementById('final-choice');
+  const text = document.getElementById('choice-text');
+  final.style.display = 'block';
+  const names = {A:'专注舱风格 — 深色渐变，专注空间', B:'学习卡片风格 — 浅蓝清新，温和学术', C:'仪表盘风格 — 数据驱动，进度可视化'};
+  text.textContent = '你选择了方案 ' + letter + '：' + names[letter];
+}
+</script>
+
+</body>
+</html>

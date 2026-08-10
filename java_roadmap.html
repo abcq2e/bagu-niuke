@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>&#9749; Java 后端开发学习路线图</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            padding: 50px 20px 40px;
+            position: relative;
+        }
+
+        .header::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 200px;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #4CAF50, #2196F3, #FF9800, #9C27B0, #F44336, transparent);
+        }
+
+        .header h1 {
+            font-size: 2.8em;
+            background: linear-gradient(135deg, #4CAF50, #2196F3, #FF9800, #F44336);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 12px;
+            letter-spacing: 2px;
+        }
+
+        .header p {
+            color: #888;
+            font-size: 1.1em;
+            letter-spacing: 4px;
+        }
+
+        .header .stats {
+            margin-top: 18px;
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            background: rgba(255,255,255,0.05);
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            color: #aaa;
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+
+        .stat-item strong {
+            color: #fff;
+            font-size: 1.1em;
+        }
+
+        .phase-section {
+            margin: 30px 0;
+            animation: fadeInUp 0.6s ease;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .phase-header {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 18px 24px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .phase-icon {
+            font-size: 1.8em;
+        }
+
+        .phase-title {
+            font-size: 1.4em;
+            font-weight: 700;
+            flex: 1;
+            color: #fff;
+        }
+
+        .phase-badge {
+            padding: 4px 14px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            color: #fff;
+            font-weight: 600;
+        }
+
+        .topics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 14px;
+            padding: 0 4px;
+        }
+
+        .topic-card {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 12px;
+            padding: 16px 18px;
+            transition: all 0.3s ease;
+            cursor: default;
+            animation: cardIn 0.5s ease backwards;
+            animation-delay: var(--card-delay, 0s);
+        }
+
+        @keyframes cardIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        .topic-card:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.15);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.3);
+        }
+
+        .topic-icon {
+            font-size: 1.3em;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .topic-content {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .topic-title {
+            font-weight: 600;
+            font-size: 1em;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .topic-desc {
+            font-size: 0.85em;
+            color: #999;
+            line-height: 1.5;
+        }
+
+        .phase-connector {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 8px 0;
+            color: #555;
+        }
+
+        .connector-line {
+            width: 2px;
+            height: 30px;
+            background: linear-gradient(180deg, #555, transparent);
+        }
+
+        .connector-arrow {
+            font-size: 1.2em;
+            animation: bounce 2s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(6px); }
+        }
+
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            color: #555;
+            font-size: 0.85em;
+            border-top: 1px solid rgba(255,255,255,0.05);
+            margin-top: 40px;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2em; }
+            .topics-grid { grid-template-columns: 1fr; }
+            .phase-title { font-size: 1.1em; }
+            .phase-header { padding: 14px 16px; }
+            .stats { gap: 12px; }
+        }
+
+        @media (max-width: 480px) {
+            body { padding: 10px; }
+            .header h1 { font-size: 1.5em; }
+            .topic-card { padding: 12px 14px; }
+        }
+
+        @media print {
+            body { background: #fff; color: #333; }
+            .phase-header { background: #f5f5f5 !important; }
+            .topic-card { background: #fafafa; border-color: #ddd; }
+            .topic-title { color: #333; }
+            .topic-desc { color: #666; }
+            .header h1 { -webkit-text-fill-color: #333; color: #333; background: none; }
+            .stat-item { border-color: #ddd; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>&#9749; Java 后端开发学习路线图</h1>
+            <p>从零基础到架构师 · 系统性成长路径</p>
+            <div class="stats">
+                <div class="stat-item">&#128218; 共 <strong>32</strong> 个知识点</div>
+                <div class="stat-item">&#128204; 共 <strong>5</strong> 个学习阶段</div>
+                <div class="stat-item">&#127919; 目标：<strong>高级后端工程师</strong></div>
+            </div>
+        </div>
+
+        
+        <div class="phase-section">
+            <div class="phase-header" style="background: linear-gradient(135deg, #4CAF5022, #4CAF5044); border-left: 5px solid #4CAF50;">
+                <span class="phase-icon">&#9749;</span>
+                <span class="phase-title">第一阶段：Java 基础</span>
+                <span class="phase-badge" style="background: #4CAF50;">8 项</span>
+            </div>
+            <div class="topics-grid">
+                
+            <div class="topic-card" style="--card-delay: 0.0s;">
+                <div class="topic-icon">&#128204;</div>
+                <div class="topic-content">
+                    <div class="topic-title">Java 环境搭建</div>
+                    <div class="topic-desc">JDK 安装、IDE 配置、Maven/Gradle</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.05s;">
+                <div class="topic-icon">&#128313;</div>
+                <div class="topic-content">
+                    <div class="topic-title">基础语法</div>
+                    <div class="topic-desc">数据类型、运算符、流程控制、数组</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.1s;">
+                <div class="topic-icon">&#128214;</div>
+                <div class="topic-content">
+                    <div class="topic-title">面向对象</div>
+                    <div class="topic-desc">类与对象、继承、多态、封装、接口、抽象类</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.15000000000000002s;">
+                <div class="topic-icon">&#128736;</div>
+                <div class="topic-content">
+                    <div class="topic-title">异常处理</div>
+                    <div class="topic-desc">try-catch-finally、自定义异常、异常链</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.2s;">
+                <div class="topic-icon">&#9889;</div>
+                <div class="topic-content">
+                    <div class="topic-title">常用类库</div>
+                    <div class="topic-desc">String、集合框架（List/Set/Map）、日期时间 API</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.25s;">
+                <div class="topic-icon">&#128279;</div>
+                <div class="topic-content">
+                    <div class="topic-title">IO 与 NIO</div>
+                    <div class="topic-desc">字节流/字符流、缓冲流、NIO 核心组件</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.30000000000000004s;">
+                <div class="topic-icon">&#129527;</div>
+                <div class="topic-content">
+                    <div class="topic-title">多线程基础</div>
+                    <div class="topic-desc">Thread/Runnable/Callable、线程状态、锁机制</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.35000000000000003s;">
+                <div class="topic-icon">&#128161;</div>
+                <div class="topic-content">
+                    <div class="topic-title">Java 8+ 新特性</div>
+                    <div class="topic-desc">Lambda、Stream API、Optional、函数式接口</div>
+                </div>
+            </div>
+            </div>
+            <div class='phase-connector'><div class='connector-line'></div><div class='connector-arrow'>&#11015;</div></div>
+        </div>
+
+        <div class="phase-section">
+            <div class="phase-header" style="background: linear-gradient(135deg, #2196F322, #2196F344); border-left: 5px solid #2196F3;">
+                <span class="phase-icon">&#128451;</span>
+                <span class="phase-title">第二阶段：数据库与 SQL</span>
+                <span class="phase-badge" style="background: #2196F3;">6 项</span>
+            </div>
+            <div class="topics-grid">
+                
+            <div class="topic-card" style="--card-delay: 0.0s;">
+                <div class="topic-icon">&#128204;</div>
+                <div class="topic-content">
+                    <div class="topic-title">关系型数据库</div>
+                    <div class="topic-desc">MySQL 安装配置、SQL 语法、CRUD 操作</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.05s;">
+                <div class="topic-icon">&#128313;</div>
+                <div class="topic-content">
+                    <div class="topic-title">高级查询</div>
+                    <div class="topic-desc">多表 JOIN、子查询、聚合函数、分组排序</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.1s;">
+                <div class="topic-icon">&#128214;</div>
+                <div class="topic-content">
+                    <div class="topic-title">索引与优化</div>
+                    <div class="topic-desc">B+ Tree 索引、Explain 分析、慢查询优化</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.15000000000000002s;">
+                <div class="topic-icon">&#128736;</div>
+                <div class="topic-content">
+                    <div class="topic-title">事务与锁</div>
+                    <div class="topic-desc">ACID、隔离级别、MVCC、行锁/表锁/间隙锁</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.2s;">
+                <div class="topic-icon">&#9889;</div>
+                <div class="topic-content">
+                    <div class="topic-title">NoSQL 数据库</div>
+                    <div class="topic-desc">Redis 数据结构与持久化、MongoDB 基础</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.25s;">
+                <div class="topic-icon">&#128279;</div>
+                <div class="topic-content">
+                    <div class="topic-title">数据库设计</div>
+                    <div class="topic-desc">ER 图、范式设计、分库分表策略</div>
+                </div>
+            </div>
+            </div>
+            <div class='phase-connector'><div class='connector-line'></div><div class='connector-arrow'>&#11015;</div></div>
+        </div>
+
+        <div class="phase-section">
+            <div class="phase-header" style="background: linear-gradient(135deg, #FF980022, #FF980044); border-left: 5px solid #FF9800;">
+                <span class="phase-icon">&#127760;</span>
+                <span class="phase-title">第三阶段：Java Web 开发</span>
+                <span class="phase-badge" style="background: #FF9800;">6 项</span>
+            </div>
+            <div class="topics-grid">
+                
+            <div class="topic-card" style="--card-delay: 0.0s;">
+                <div class="topic-icon">&#128204;</div>
+                <div class="topic-content">
+                    <div class="topic-title">HTTP 协议</div>
+                    <div class="topic-desc">请求/响应结构、状态码、Cookie/Session</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.05s;">
+                <div class="topic-icon">&#128313;</div>
+                <div class="topic-content">
+                    <div class="topic-title">Servlet &amp; JSP</div>
+                    <div class="topic-desc">Servlet 生命周期、Filter/Listener、JSP 语法</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.1s;">
+                <div class="topic-icon">&#128214;</div>
+                <div class="topic-content">
+                    <div class="topic-title">Spring 框架</div>
+                    <div class="topic-desc">IoC 容器、DI 依赖注入、AOP 面向切面</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.15000000000000002s;">
+                <div class="topic-icon">&#128736;</div>
+                <div class="topic-content">
+                    <div class="topic-title">Spring MVC</div>
+                    <div class="topic-desc">DispatcherServlet、控制器、拦截器、RESTful API</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.2s;">
+                <div class="topic-icon">&#9889;</div>
+                <div class="topic-content">
+                    <div class="topic-title">MyBatis / JPA</div>
+                    <div class="topic-desc">ORM 映射、Mapper、动态 SQL、事务管理</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.25s;">
+                <div class="topic-icon">&#128279;</div>
+                <div class="topic-content">
+                    <div class="topic-title">Spring Boot</div>
+                    <div class="topic-desc">自动配置、Starter、Actuator、配置文件管理</div>
+                </div>
+            </div>
+            </div>
+            <div class='phase-connector'><div class='connector-line'></div><div class='connector-arrow'>&#11015;</div></div>
+        </div>
+
+        <div class="phase-section">
+            <div class="phase-header" style="background: linear-gradient(135deg, #9C27B022, #9C27B044); border-left: 5px solid #9C27B0;">
+                <span class="phase-icon">&#9881;</span>
+                <span class="phase-title">第四阶段：中间件与微服务</span>
+                <span class="phase-badge" style="background: #9C27B0;">6 项</span>
+            </div>
+            <div class="topics-grid">
+                
+            <div class="topic-card" style="--card-delay: 0.0s;">
+                <div class="topic-icon">&#128204;</div>
+                <div class="topic-content">
+                    <div class="topic-title">消息队列</div>
+                    <div class="topic-desc">RabbitMQ/Kafka 核心概念、生产消费模型</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.05s;">
+                <div class="topic-icon">&#128313;</div>
+                <div class="topic-content">
+                    <div class="topic-title">搜索引擎</div>
+                    <div class="topic-desc">Elasticsearch 基础、索引与搜索、聚合分析</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.1s;">
+                <div class="topic-icon">&#128214;</div>
+                <div class="topic-content">
+                    <div class="topic-title">RPC 框架</div>
+                    <div class="topic-desc">Dubbo / gRPC 原理、服务注册与发现</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.15000000000000002s;">
+                <div class="topic-icon">&#128736;</div>
+                <div class="topic-content">
+                    <div class="topic-title">Spring Cloud</div>
+                    <div class="topic-desc">Nacos/Eureka、Gateway、Feign、Sentinel</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.2s;">
+                <div class="topic-icon">&#9889;</div>
+                <div class="topic-content">
+                    <div class="topic-title">分布式理论</div>
+                    <div class="topic-desc">CAP 定理、BASE 理论、一致性算法（Raft/Paxos）</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.25s;">
+                <div class="topic-icon">&#128279;</div>
+                <div class="topic-content">
+                    <div class="topic-title">容器化部署</div>
+                    <div class="topic-desc">Docker 镜像与容器、Docker Compose、K8s 基础</div>
+                </div>
+            </div>
+            </div>
+            <div class='phase-connector'><div class='connector-line'></div><div class='connector-arrow'>&#11015;</div></div>
+        </div>
+
+        <div class="phase-section">
+            <div class="phase-header" style="background: linear-gradient(135deg, #F4433622, #F4433644); border-left: 5px solid #F44336;">
+                <span class="phase-icon">&#128640;</span>
+                <span class="phase-title">第五阶段：工程实践与进阶</span>
+                <span class="phase-badge" style="background: #F44336;">6 项</span>
+            </div>
+            <div class="topics-grid">
+                
+            <div class="topic-card" style="--card-delay: 0.0s;">
+                <div class="topic-icon">&#128204;</div>
+                <div class="topic-content">
+                    <div class="topic-title">JVM 调优</div>
+                    <div class="topic-desc">内存模型、GC 算法、调优工具（JProfiler/Arthas）</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.05s;">
+                <div class="topic-icon">&#128313;</div>
+                <div class="topic-content">
+                    <div class="topic-title">设计模式</div>
+                    <div class="topic-desc">单例、工厂、代理、策略、观察者等常用模式</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.1s;">
+                <div class="topic-icon">&#128214;</div>
+                <div class="topic-content">
+                    <div class="topic-title">性能测试</div>
+                    <div class="topic-desc">JMeter/LoadRunner 压测、性能瓶颈分析</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.15000000000000002s;">
+                <div class="topic-icon">&#128736;</div>
+                <div class="topic-content">
+                    <div class="topic-title">安全防护</div>
+                    <div class="topic-desc">SQL 注入、XSS/CSRF、认证授权（JWT/OAuth2）</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.2s;">
+                <div class="topic-icon">&#9889;</div>
+                <div class="topic-content">
+                    <div class="topic-title">CI/CD</div>
+                    <div class="topic-desc">Git 工作流、Jenkins 自动化构建、代码审查</div>
+                </div>
+            </div>
+
+            <div class="topic-card" style="--card-delay: 0.25s;">
+                <div class="topic-icon">&#128279;</div>
+                <div class="topic-content">
+                    <div class="topic-title">系统设计</div>
+                    <div class="topic-desc">高并发、高可用、高扩展架构设计思路</div>
+                </div>
+            </div>
+            </div>
+            
+        </div>
+
+        <div class="footer">
+            <p>&#9749; Java 后端开发学习路线图 · 持续更新中</p>
+            <p style="margin-top: 6px;">&#128161; 建议按阶段顺序学习，每个知识点动手实践 + 做项目巩固</p>
+        </div>
+    </div>
+</body>
+</html>

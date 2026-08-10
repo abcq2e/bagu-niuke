@@ -26,7 +26,6 @@ public class ChatMemoryConfig {
         String fileDir = System.getProperty("user.dir") + "/data/chat-memory";
         return new FileBasedChatMemory(fileDir);
     }
-
     @Bean
     public ChatMemory chatMemory(FileBasedChatMemory fileBasedChatMemory,
                                   ConversationSummarizer conversationSummarizer) {
