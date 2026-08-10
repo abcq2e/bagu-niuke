@@ -25,8 +25,9 @@ public class RagSearchTool {
 
     @Tool(description = """
             搜索本地向量知识库（全库检索），获取与查询相关的技术文档片段。
-            知识库覆盖三大分类：
+            知识库覆盖四大分类：
             - 八股：Java 并发、Spring 框架、数据结构与算法、JVM 等面试题
+            - 面渣逆袭：Java 基础、JVM、MySQL、Redis、Spring 等大厂面试问答集
             - Agent：AI Agent 设计、工具化、MCP、框架实现
             - 实践：落地经验、知识库构建方法
 
@@ -60,13 +61,14 @@ public class RagSearchTool {
 
     @Tool(description = """
             按分类搜索本地向量知识库，只检索指定分类下的文档，结果更精准。
-            分类选项（三选一）：
+            分类选项（四选一）：
             - "八股"：Java 并发、Spring 框架、数据结构与算法、JVM 等面试题
+            - "面渣逆袭"：Java 基础、JVM、MySQL、Redis、Spring 等大厂面试问答详解
             - "Agent"：AI Agent 设计原理、工具化方案、MCP、框架实现
             - "实践"：项目落地经验、知识库构建方法
 
             使用时机：用户明确问了某个领域的知识点时优先使用，比全库检索更快更准。
-            示例：用户问"Java 并发怎么学"→ category="八股"；问"怎么设计 Agent"→ category="Agent"
+            示例：用户问"Java 并发怎么学"→ category="八股"；问"JVM 内存结构"→ category="面渣逆袭"
             """)
     public String searchKnowledgeBaseByCategory(
             @ToolParam(description = "搜索关键词或自然语言问题") String query,

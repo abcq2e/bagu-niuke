@@ -1,7 +1,6 @@
 package com.qian.qianaiagent.advisor;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.client.ChatClientMessageAggregator;
 import org.springframework.ai.chat.client.ChatClientRequest;
 import org.springframework.ai.chat.client.ChatClientResponse;
 import org.springframework.ai.chat.client.advisor.api.CallAdvisor;
@@ -12,7 +11,7 @@ import reactor.core.publisher.Flux;
 
 /**
  * 自定义日志 Advisor
- * 打印 info 级别日志、只输出单次用户提示词和 AI 回复的文本
+ * 流式模式下直接透传，不聚合（聚合会缓存全部 chunk 导致卡顿）
  */
 @Slf4j
 public class MyLoggerAdvisor implements CallAdvisor, StreamAdvisor {
@@ -27,24 +26,18 @@ public class MyLoggerAdvisor implements CallAdvisor, StreamAdvisor {
 		return 0;
 	}
 
-	private ChatClientRequest before(ChatClientRequest request) {
-		log.info("AI Request: {}", request.prompt());
-		return request;
-	}
-	private void observeAfter(ChatClientResponse chatClientResponse) {
-		log.info("AI Response: {}", chatClientResponse.chatResponse().getResult().getOutput().getText());
-	}
 	@Override
 	public ChatClientResponse adviseCall(ChatClientRequest chatClientRequest, CallAdvisorChain chain) {
-		chatClientRequest = before(chatClientRequest);
-		ChatClientResponse chatClientResponse = chain.nextCall(chatClientRequest);
-		observeAfter(chatClientResponse);
-		return chatClientResponse;
+		log.info("AI Request: {}", chatClientRequest.prompt());
+		ChatClientResponse response = chain.nextCall(chatClientRequest);
+		log.info("AI Response: {}", response.chatResponse().getResult().getOutput().getText());
+		return response;
 	}
+
 	@Override
 	public Flux<ChatClientResponse> adviseStream(ChatClientRequest chatClientRequest, StreamAdvisorChain chain) {
-		chatClientRequest = before(chatClientRequest);
-		Flux<ChatClientResponse> chatClientResponseFlux = chain.nextStream(chatClientRequest);
-		return (new ChatClientMessageAggregator()).aggregateChatClientResponse(chatClientResponseFlux, this::observeAfter);
+		log.info("AI Stream Request: chatId={}", chatClientRequest.context().get("chat_memory_conversation_id"));
+		// 直接透传，不聚合 —— 聚合会等所有 chunk 到达后才放行，造成流式卡顿
+		return chain.nextStream(chatClientRequest);
 	}
 }

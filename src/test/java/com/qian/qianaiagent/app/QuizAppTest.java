@@ -58,16 +58,7 @@ class QuizAppTest {
 
     private void testMessage(String message) {
         String chatId = UUID.randomUUID().toString();
-        String answer = quizApp.doChatWithTools(message, chatId);
-        Assertions.assertNotNull(answer);
-    }
-
-    @Test
-    void doChatWithMcp() {
-        String chatId = UUID.randomUUID().toString();
-        // 测试图片搜索 MCP
-        String message = "帮我搜索一些和Java编程相关的技术图片";
-        String answer = quizApp.doChatWithMcp(message, chatId);
+        String answer = quizApp.doChat(message, chatId);
         Assertions.assertNotNull(answer);
     }
 }

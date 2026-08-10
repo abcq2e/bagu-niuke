@@ -92,4 +92,38 @@ export const renameConversation = (chatId, title) => {
   return request.put(`/ai/conversations/${chatId}/title`, null, { params: { title } })
 }
 
-export default { login, register, chat, agentChat, getConversations, getConversationMessages, deleteConversation, renameConversation }
+// ===== 错题复习 API =====
+
+// 错题复习对话（SSE 流式）
+export const reviewChat = (message, chatId, sourceChatId) => {
+  return connectSSE('/ai/review/chat', { message, chatId, sourceChatId })
+}
+
+// 获取错题池预览
+export const getReviewPool = (chatId) => {
+  return request.get(`/ai/review/pool/${chatId}`)
+}
+
+// ===== 个性化画像 API =====
+
+// 获取用户能力画像
+export const getProfile = (chatId) => {
+  return request.get(`/ai/quiz/profile/${chatId}`)
+}
+
+// 获取文字版考察总结
+export const getProfileSummary = (chatId) => {
+  return request.get(`/ai/quiz/profile/${chatId}/summary`)
+}
+
+// 重置画像
+export const resetProfile = (chatId) => {
+  return request.post(`/ai/quiz/profile/${chatId}/reset`)
+}
+
+// 强制清理跨方向弱点评
+export const cleanupProfile = (chatId) => {
+  return request.post(`/ai/quiz/profile/${chatId}/cleanup`)
+}
+
+export default { login, register, chat, agentChat, getConversations, getConversationMessages, deleteConversation, renameConversation, getProfile, getProfileSummary, resetProfile }

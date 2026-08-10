@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>错题复习 — 设计稿 v6</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:#f1f5f9;color:#1e293b;display:flex;justify-content:center;padding:24px;
+  -webkit-font-smoothing:antialiased;
+}
+.layout{display:flex;width:100%;max-width:1100px;height:720px;background:#fff;border-radius:14px;border:1px solid #e2e8f0;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.03)}
+
+/* ===== sidebar ===== */
+.sidebar{width:260px;min-width:260px;background:#f9fafb;border-right:1px solid #e8ecf1;display:flex;flex-direction:column}
+.sidebar-header{display:flex;align-items:center;gap:8px;padding:20px 16px;cursor:pointer}
+.s-logo{font-size:18px;color:#4f46e5}
+.s-title{font-size:16px;font-weight:700;color:#1a1a2e}
+.sidebar-body{flex:1;padding:8px 12px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.new-chat-btn{
+  width:100%;padding:10px;border:1px solid #dde1e7;border-radius:10px;background:#fff;
+  font-size:14px;color:#374151;cursor:pointer;transition:all .2s;margin-bottom:12px
+}
+.new-chat-btn:hover{border-color:#4f46e5;color:#4f46e5}
+
+/* ===== 🆕 错题复习 — 独立区块 ===== */
+.review-section{margin-bottom:8px}
+.review-section-label{
+  font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;
+  padding:0 4px;margin-bottom:4px
+}
+.review-card{
+  background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #e9d5ff;border-radius:10px;
+  padding:12px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:10px
+}
+.review-card:hover{background:linear-gradient(135deg,#f3e8ff,#ede9fe);border-color:#c4b5fd}
+.review-card.active{background:linear-gradient(135deg,#ede9fe,#ddd6fe);border-color:#a78bfa}
+.review-card-icon{
+  width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c3aed,#4f46e5);
+  display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0
+}
+.review-card-info{flex:1;min-width:0}
+.review-card-title{font-size:13px;font-weight:600;color:#1a1a2e}
+.review-card.active .review-card-title{color:#4c1d95}
+.review-card-meta{font-size:11px;color:#94a3b8;margin-top:1px}
+.review-card-badge{
+  font-size:10px;font-weight:700;color:#7c3aed;background:#ede9fe;
+  padding:2px 7px;border-radius:8px;white-space:nowrap
+}
+.review-card.active .review-card-badge{background:#c4b5fd;color:#4c1d95}
+
+/* divider */
+.sidebar-div{height:1px;background:#e8ecf1;margin:6px 0}
+.sidebar-section-label{
+  font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px;
+  padding:0 4px;margin-bottom:4px
+}
+
+/* normal conv */
+.conv-item{
+  padding:10px 12px;border-radius:8px;cursor:pointer;transition:all .15s;
+  display:flex;flex-direction:column;gap:2px
+}
+.conv-item:hover{background:#eef2ff}
+.conv-item.active{background:#e0e7ff}
+.conv-item.active .conv-title{color:#4f46e5;font-weight:600}
+.conv-title{font-size:13px;color:#374151;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.conv-meta{font-size:11px;color:#9ca3af;display:flex;justify-content:space-between}
+.sidebar-footer{padding:12px 16px;border-top:1px solid #e8ecf1;display:flex;flex-direction:column;gap:8px}
+.mode-toggle{display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer}
+.mode-label{font-size:11px;color:#94a3b8}
+.mode-label.active{color:#4f46e5;font-weight:600}
+.mode-switch{width:36px;height:20px;border-radius:10px;background:#e2e8f0;position:relative;flex-shrink:0}
+.mode-knob{width:16px;height:16px;border-radius:50%;background:#fff;position:absolute;top:2px;left:2px;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.s-model{font-size:11px;color:#9ca3af;text-align:center}
+
+/* ===== main ===== */
+.main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative;background:#fff}
+
+/* 🆕 review topbar — clean glass-style */
+.review-topbar{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 24px;border-bottom:1px solid #f1f5f9;
+  background:linear-gradient(135deg,#faf5ff,#f5f3ff);
+  font-size:13px
+}
+.review-topbar-icon{
+  width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#7c3aed,#4f46e5);
+  display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0
+}
+.review-topbar-title{font-weight:600;color:#1a1a2e}
+.review-topbar-dir{font-size:12px;color:#64748b}
+.review-topbar-spacer{flex:1}
+.review-topbar-stat{
+  display:flex;align-items:center;gap:8px;font-size:12px;color:#64748b
+}
+.review-topbar-bar{width:72px;height:4px;background:#e9d5ff;border-radius:2px;overflow:hidden}
+.review-topbar-fill{height:100%;border-radius:2px;background:linear-gradient(90deg,#7c3aed,#4f46e5);transition:width .4s}
+
+/* msg area */
+.msg-area{flex:1;overflow-y:auto;padding:24px 24px 0;display:flex;flex-direction:column;gap:4px}
+.msg{display:flex;gap:12px;max-width:85%}
+.msg-user{align-self:flex-end;flex-direction:row-reverse}
+.msg-ai{align-self:flex-start}
+.msg-avatar{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700
+}
+.msg-ai .msg-avatar{background:#eef2ff;color:#4f46e5}
+.msg-user .msg-avatar{background:#4f46e5;color:#fff}
+.msg-text{
+  font-size:15px;line-height:1.7;padding:10px 16px;border-radius:16px;
+  white-space:pre-wrap;word-break:break-word
+}
+.msg-ai .msg-text{background:#f1f5f9;border-bottom-left-radius:4px}
+.msg-user .msg-text{background:#4f46e5;color:#fff;border-bottom-right-radius:4px}
+.msg-text strong{font-weight:700}
+.msg-text code{background:rgba(0,0,0,.06);padding:2px 6px;border-radius:4px;font-size:13px;font-family:'SF Mono',monospace}
+
+/* input */
+.input-area{padding:12px 24px 16px;border-top:1px solid #f1f5f9}
+.input-wrap{
+  display:flex;gap:8px;align-items:flex-end;max-width:800px;margin:0 auto;
+  border:1px solid #e2e8f0;border-radius:16px;padding:6px 6px 6px 16px;
+  transition:border-color .2s,box-shadow .2s
+}
+.input-wrap:focus-within{border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.08)}
+.input-box{
+  flex:1;border:none;outline:none;resize:none;font-size:15px;line-height:1.5;
+  padding:6px 0;max-height:120px;font-family:inherit
+}
+.input-box::placeholder{color:#94a3b8}
+.send-btn{
+  width:38px;height:38px;border-radius:12px;border:none;background:#4f46e5;color:#fff;
+  display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;
+  transition:all .2s;font-size:18px
+}
+.send-btn:hover{background:#4338ca;transform:scale(1.05)}
+
+/* FAB */
+.fab{
+  position:absolute;bottom:100px;right:24px;width:48px;height:48px;border-radius:50%;
+  background:#4f46e5;color:#fff;border:none;font-size:22px;cursor:pointer;
+  box-shadow:0 4px 12px rgba(79,70,229,.4);z-index:100;
+  display:flex;align-items:center;justify-content:center
+}
+.fab:hover{box-shadow:0 6px 20px rgba(79,70,229,.5)}
+.fab-badge{
+  position:absolute;top:-4px;right:-4px;width:20px;height:20px;background:#ef4444;
+  border-radius:50%;font-size:11px;font-weight:700;color:#fff;
+  display:flex;align-items:center;justify-content:center
+}
+
+/* drawer */
+.drawer-overlay{position:absolute;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.3);z-index:150;display:none}
+.drawer-overlay.on{display:block}
+.ability-drawer{
+  position:absolute;right:0;top:0;bottom:0;width:380px;background:#fafbfc;
+  box-shadow:-4px 0 20px rgba(0,0,0,.12);z-index:200;overflow-y:auto;
+  transform:translateX(100%);transition:transform .25s ease
+}
+.ability-drawer.on{transform:translateX(0)}
+.drawer-inner{padding:20px 16px 24px;display:flex;flex-direction:column;gap:18px;font-size:13px}
+
+.drawer-hd{display:flex;align-items:center;justify-content:space-between}
+.drawer-title-row{display:flex;align-items:center;gap:8px}
+.drawer-title{font-size:15px;font-weight:700;color:#1a1a2e}
+.drawer-badge{font-size:11px;font-weight:600;color:#64748b;background:#f1f5f9;padding:3px 8px;border-radius:6px}
+.drawer-close{
+  width:28px;height:28px;border-radius:6px;border:none;background:transparent;
+  cursor:pointer;color:#94a3b8;font-size:16px;display:flex;align-items:center;justify-content:center
+}
+.drawer-close:hover{background:#f1f5f9;color:#475569}
+
+.stats-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.stat-card{
+  background:#fff;border:1px solid #f1f5f9;border-radius:10px;
+  padding:12px 8px;text-align:center;display:flex;flex-direction:column;gap:2px
+}
+.stat-value{font-size:18px;font-weight:700;color:#1a1a2e}
+.stat-label{font-size:11px;color:#94a3b8;font-weight:500}
+
+/* 🆕 错题复习入口（能力画像抽屉内） */
+.review-entry-card{
+  background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid #e9d5ff;border-radius:10px;
+  padding:14px 16px;display:flex;align-items:center;gap:12px
+}
+.review-entry-icon{
+  width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,#7c3aed,#4f46e5);
+  display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0
+}
+.review-entry-info{flex:1;min-width:0}
+.review-entry-title{font-size:13px;font-weight:600;color:#1a1a2e}
+.review-entry-desc{font-size:11px;color:#94a3b8;margin-top:2px}
+.review-entry-btn{
+  padding:8px 16px;border-radius:8px;font-size:12px;font-weight:600;
+  cursor:pointer;border:none;white-space:nowrap;transition:all .15s;
+  background:#4f46e5;color:#fff
+}
+.review-entry-btn:hover{background:#4338ca}
+
+/* score cards */
+.group{display:flex;flex-direction:column;gap:8px}
+.group-header{font-size:11px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px}
+.card-list{display:flex;flex-direction:column;gap:4px}
+.card{
+  background:#fff;border:1px solid #f1f5f9;border-radius:10px;
+  padding:10px 12px;transition:border-color .2s
+}
+.card:hover{border-color:#e2e8f0}
+.card-row{display:flex;align-items:center;gap:8px}
+.card-name{font-weight:500;font-size:13px;flex:1}
+.card-score{font-size:12px;font-weight:600;white-space:nowrap}
+.card-meta{font-size:11px;color:#94a3b8}
+.bar{height:3px;background:#f1f5f9;border-radius:2px;margin-top:6px;overflow:hidden}
+.bar-fill{height:100%;border-radius:2px;background:#4f46e5;transition:width .5s}
+.lvl-low{color:#dc2626}.lvl-mid{color:#d97706}.lvl-high{color:#059669}
+
+/* modals */
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(15,23,42,.4);z-index:1000;display:flex;align-items:center;justify-content:center;animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0}}
+.q-modal{background:#fff;border-radius:14px;width:440px;max-height:75vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(15,23,42,.18)}
+.qm-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 12px}
+.qm-title{font-size:14px;font-weight:600;color:#1a1a2e}
+.qm-body{padding:4px 20px 20px;overflow-y:auto;flex:1;font-size:14px;line-height:1.7}
+.qm-body .q-text{background:#f8fafc;border-radius:10px;padding:14px 16px;white-space:pre-wrap;word-break:break-word}
+.qm-foot{padding:12px 20px;border-top:1px solid #f1f5f9;display:flex;justify-content:flex-end}
+
+.done-modal{
+  background:#fff;border-radius:16px;width:400px;padding:36px 32px;text-align:center;
+  box-shadow:0 24px 80px rgba(0,0,0,.18);display:flex;flex-direction:column;align-items:center;gap:16px;
+  animation:scaleIn .3s ease
+}
+@keyframes scaleIn{from{opacity:0;transform:scale(.95) translateY(8px)}}
+.done-icon{width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#ede9fe,#ddd6fe);display:flex;align-items:center;justify-content:center;font-size:32px}
+.done-title{font-size:20px;font-weight:700;color:#1a1a2e}
+.done-desc{font-size:14px;color:#64748b}
+.done-stats{display:flex;gap:24px;margin:4px 0;background:#f8fafc;border-radius:12px;padding:16px 24px;width:100%}
+.done-stat{text-align:center;flex:1}
+.done-stat-val{font-size:22px;font-weight:700;color:#1a1a2e}
+.done-stat-label{font-size:11px;color:#94a3b8;margin-top:2px}
+.done-btn{width:100%;padding:12px;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;background:#4f46e5;color:#fff;border:none;transition:all .2s}
+.done-btn:hover{background:#4338ca}
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ===== SIDEBAR ===== -->
+  <aside class="sidebar">
+    <div class="sidebar-header"><span class="s-logo">🧠</span><span class="s-title">AI 面试官</span></div>
+    <div class="sidebar-body">
+      <button class="new-chat-btn">+ 新对话</button>
+
+      <!-- 🆕 错题复习 — 独立区块，紫色渐变，一眼区分 -->
+      <div class="review-section">
+        <div class="review-section-label">错题复习</div>
+        <div class="review-card active" id="reviewCard" onclick="switchToReview()">
+          <div class="review-card-icon">📝</div>
+          <div class="review-card-info">
+            <div class="review-card-title">错题复习</div>
+            <div class="review-card-meta">5 方向 · 12 道错题</div>
+          </div>
+          <span class="review-card-badge">12</span>
+        </div>
+      </div>
+
+      <div class="sidebar-div"></div>
+      <div class="sidebar-section-label">面试对话</div>
+
+      <div class="conv-item" id="conv1" onclick="switchToInterview()">
+        <div class="conv-title">Java 并发深度考察</div>
+        <div class="conv-meta"><span>18 条</span><span>10:24</span></div>
+      </div>
+      <div class="conv-item" onclick="switchToInterview()">
+        <div class="conv-title">Spring 框架面试</div>
+        <div class="conv-meta"><span>12 条</span><span>昨天</span></div>
+      </div>
+    </div>
+    <div class="sidebar-footer">
+      <div class="mode-toggle">
+        <span class="mode-label active">💬 对话</span>
+        <span class="mode-switch"><span class="mode-knob"></span></span>
+        <span class="mode-label">🤖 Agent</span>
+      </div>
+      <span class="s-model">DeepSeek · DashScope</span>
+    </div>
+  </aside>
+
+  <!-- ===== MAIN ===== -->
+  <main class="main">
+    <!-- 🆕 review topbar — 紫色渐变主题 -->
+    <div class="review-topbar" id="reviewTopbar">
+      <div class="review-topbar-icon">📝</div>
+      <span class="review-topbar-title">错题复习</span>
+      <span class="review-topbar-dir" id="reviewDir">· Java并发</span>
+      <span class="review-topbar-spacer"></span>
+      <span class="review-topbar-stat">
+        <span class="review-topbar-bar"><span class="review-topbar-fill" id="reviewBar" style="width:17%"></span></span>
+        <span id="reviewNum">2/12</span>
+      </span>
+    </div>
+
+    <!-- msg -->
+    <div class="msg-area" id="msgArea">
+      <!-- default: show interview yet -->
+    </div>
+
+    <!-- input -->
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea class="input-box" placeholder="输入回答… (Enter 发送，Shift+Enter 换行)" rows="1" id="inputBox" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"></textarea>
+        <button class="send-btn" onclick="send()">↑</button>
+      </div>
+    </div>
+
+    <!-- FAB -->
+    <button class="fab" onclick="toggleDrawer()">★<span class="fab-badge">5</span></button>
+
+    <!-- drawer -->
+    <div class="drawer-overlay" id="overlay" onclick="toggleDrawer()"></div>
+    <div class="ability-drawer" id="drawer">
+      <div class="drawer-inner">
+        <div class="drawer-hd">
+          <div class="drawer-title-row">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="color:#94a3b8"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            <span class="drawer-title">能力画像</span>
+            <span class="drawer-badge">2.8 / 5</span>
+          </div>
+          <button class="drawer-close" onclick="toggleDrawer()">×</button>
+        </div>
+
+        <div class="stats-row">
+          <div class="stat-card"><span class="stat-value">2.8/5</span><span class="stat-label">综合等级</span></div>
+          <div class="stat-card"><span class="stat-value">5/16</span><span class="stat-label">已考方向</span></div>
+          <div class="stat-card"><span class="stat-value">18</span><span class="stat-label">答题数</span></div>
+        </div>
+
+        <!-- 🆕 错题复习入口 — 紫色卡片 -->
+        <div class="review-entry-card">
+          <div class="review-entry-icon">📝</div>
+          <div class="review-entry-info">
+            <div class="review-entry-title">错题复习</div>
+            <div class="review-entry-desc">5 个方向 · 12 道错题待复习</div>
+          </div>
+          <button class="review-entry-btn" onclick="switchToReview()">进入复习</button>
+        </div>
+
+        <div class="group">
+          <div class="group-header">需重点复习</div>
+          <div class="card-list">
+            <div class="card"><div class="card-row"><span class="card-name">Java并发</span><span class="card-score lvl-low">1.8 / 5</span><span class="card-meta">4 题</span></div><div class="bar"><div class="bar-fill" style="width:36%"></div></div></div>
+            <div class="card"><div class="card-row"><span class="card-name">MySQL</span><span class="card-score lvl-low">2.2 / 5</span><span class="card-meta">3 题</span></div><div class="bar"><div class="bar-fill" style="width:44%"></div></div></div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="group-header">已考察</div>
+          <div class="card-list">
+            <div class="card"><div class="card-row"><span class="card-name">计算机网络</span><span class="card-score lvl-mid">3.2 / 5</span><span class="card-meta">3 题</span></div><div class="bar"><div class="bar-fill" style="width:64%"></div></div></div>
+            <div class="card"><div class="card-row"><span class="card-name">操作系统</span><span class="card-score lvl-high">3.8 / 5</span><span class="card-meta">3 题</span></div><div class="bar"><div class="bar-fill" style="width:76%"></div></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- 题目弹窗 -->
+<div class="modal-overlay" id="qModal" style="display:none" onclick="this.style.display='none'">
+  <div class="q-modal" onclick="event.stopPropagation()">
+    <div class="qm-head"><span class="qm-title" id="qmTitle"></span><button class="drawer-close" onclick="document.getElementById('qModal').style.display='none'">×</button></div>
+    <div class="qm-body"><div class="q-text" id="qmContent"></div></div>
+    <div class="qm-foot"><button style="padding:8px 20px;font-size:13px;background:#fff;color:#475569;border:1px solid #e2e8f0;border-radius:10px;cursor:pointer" onclick="document.getElementById('qModal').style.display='none'">关闭</button></div>
+  </div>
+</div>
+
+<!-- 完成弹窗 -->
+<div class="modal-overlay" id="doneModal" style="display:none">
+  <div class="done-modal">
+    <div class="done-icon">✅</div>
+    <div class="done-title">错题全部清除</div>
+    <div class="done-desc">12 道错题复习完毕，已从错题本移除</div>
+    <div class="done-stats">
+      <div class="done-stat"><div class="done-stat-val">12</div><div class="done-stat-label">清除</div></div>
+      <div class="done-stat"><div class="done-stat-val">5</div><div class="done-stat-label">方向</div></div>
+    </div>
+    <button class="done-btn" onclick="switchToInterview();document.getElementById('doneModal').style.display='none'">返回面试模式</button>
+  </div>
+</div>
+
+<script>
+let inReview = true;
+
+function switchToReview() {
+  inReview = true;
+  document.getElementById('reviewCard').classList.add('active');
+  document.querySelectorAll('.conv-item').forEach(c => c.classList.remove('active'));
+  document.getElementById('reviewTopbar').style.display = 'flex';
+  resetReviewMsgs();
+}
+function switchToInterview() {
+  inReview = false;
+  document.getElementById('reviewCard').classList.remove('active');
+  document.getElementById('conv1').classList.add('active');
+  document.getElementById('reviewTopbar').style.display = 'none';
+  document.getElementById('msgArea').innerHTML = `
+    <div class="msg msg-ai"><div class="msg-avatar">🤖</div><div class="msg-text">面试开始，你准备好了吗？我会考察你的 Java 并发、Spring 框架、数据结构和系统设计能力。</div></div>
+    <div class="msg msg-user"><div class="msg-avatar">我</div><div class="msg-text">准备好了，开始吧。</div></div>
+    <div class="msg msg-ai"><div class="msg-avatar">🤖</div><div class="msg-text"><strong>📌 Java基础与集合：</strong>HashMap 的底层数据结构是什么？JDK 8 做了哪些优化？</div></div>`;
+}
+
+function resetReviewMsgs() {
+  document.getElementById('msgArea').innerHTML = `
+    <div class="msg msg-ai"><div class="msg-avatar">🤖</div><div class="msg-text">切换到<strong>错题复习</strong>。按方向顺序考察你的错题，答对自动移除。<br><br><strong>📌 Java并发 — 第 1 题：</strong>请讲一下 <code>synchronized</code> 锁升级的过程？</div></div>`;
+}
+
+let qi = 1;
+const order = ['Java并发','Java并发','Java并发','Java并发','MySQL','MySQL','MySQL','Redis','Redis','Spring框架','Spring框架','JVM'];
+const qs = {
+  'Java并发':['线程池核心参数？','ConcurrentHashMap扩容？','volatile如何保证可见性？'],
+  'MySQL':['索引最左前缀原则？','事务隔离级别？','MVCC实现原理？'],
+  'Redis':['RDB vs AOF？','缓存穿透解决方案？'],
+  'Spring框架':['IoC启动流程？','AOP实现原理？'],
+  'JVM':['CMS vs G1？']
+};
+
+function send() {
+  const inp = document.getElementById('inputBox');
+  const text = inp.value.trim(); if(!text)return;
+  if(!inReview){
+    inp.value='';return;
+  }
+  const area = document.getElementById('msgArea');
+  const u = document.createElement('div');u.className='msg msg-user';
+  u.innerHTML='<div class="msg-avatar">我</div><div class="msg-text">'+text+'</div>';
+  area.appendChild(u);inp.value='';qi++;
+
+  setTimeout(()=>{
+    if(qi>12){
+      document.getElementById('reviewBar').style.width='100%';
+      document.getElementById('reviewNum').textContent='12/12';
+      const a=document.createElement('div');a.className='msg msg-ai';
+      a.innerHTML='<div class="msg-avatar">🤖</div><div class="msg-text">🎉 全部错题复习完毕！</div>';
+      area.appendChild(a);
+      setTimeout(()=>document.getElementById('doneModal').style.display='flex',600);
+    }else{
+      const dir=order[qi-1];
+      document.getElementById('reviewDir').textContent='· '+dir;
+      document.getElementById('reviewNum').textContent=qi+'/12';
+      document.getElementById('reviewBar').style.width=Math.round(qi/12*100)+'%';
+      const list=qs[dir]||['请回答…'];
+      const qt=list[Math.min(qi%list.length,list.length-1)];
+      const a=document.createElement('div');a.className='msg msg-ai';
+      a.innerHTML='<div class="msg-avatar">🤖</div><div class="msg-text"><strong>✅ 回答正确，已移除。</strong><br><br><strong>📌 '+dir+' — 第'+qi+'题：</strong>'+qt+'</div>';
+      area.appendChild(a);
+    }
+    area.scrollTop=area.scrollHeight;
+  },500);
+}
+
+let drawerOpen=false;
+function toggleDrawer(){
+  drawerOpen=!drawerOpen;
+  document.getElementById('drawer').classList.toggle('on',drawerOpen);
+  document.getElementById('overlay').classList.toggle('on',drawerOpen);
+}
+
+// init
+switchToReview();
+</script>
+</body>
+</html>

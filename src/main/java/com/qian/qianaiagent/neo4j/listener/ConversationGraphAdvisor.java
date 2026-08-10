@@ -10,8 +10,11 @@ import org.springframework.ai.chat.client.advisor.api.CallAdvisorChain;
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisor;
 import org.springframework.ai.chat.client.advisor.api.StreamAdvisorChain;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
+
+import java.util.concurrent.Executor;
 
 /**
  * 对话图谱同步 Advisor
@@ -35,8 +38,19 @@ public class ConversationGraphAdvisor implements CallAdvisor, StreamAdvisor {
 
     private final ConversationAnalysisService analysisService;
 
+    /** Neo4j 写入专用线程池（异步、不阻塞 LLM 调用） */
+    private final Executor neo4jExecutor;
+
     public ConversationGraphAdvisor(ConversationAnalysisService analysisService) {
         this.analysisService = analysisService;
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("neo4j-async-");
+        executor.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.DiscardOldestPolicy());
+        executor.initialize();
+        this.neo4jExecutor = executor;
     }
 
     @Override
@@ -59,19 +73,31 @@ public class ConversationGraphAdvisor implements CallAdvisor, StreamAdvisor {
         String conversationId = extractConversationId(chatClientRequest);
         String userMessage = extractUserMessage(chatClientRequest);
 
-        // 记录用户消息到 Neo4j
+        // 🔴 异步记录用户消息到 Neo4j（不阻塞 LLM 调用）
         if (conversationId != null && userMessage != null) {
-            analysisService.recordUserMessage(conversationId, userMessage);
+            neo4jExecutor.execute(() -> {
+                try {
+                    analysisService.recordUserMessage(conversationId, userMessage);
+                } catch (Exception e) {
+                    log.warn("Neo4j 异步写入用户消息失败: {}", e.getMessage());
+                }
+            });
         }
 
         // 执行后续链（包括调用 AI）
         ChatClientResponse response = chain.nextCall(chatClientRequest);
 
-        // 记录 AI 回复到 Neo4j
+        // 🔴 异步记录 AI 回复到 Neo4j
         if (conversationId != null && response.chatResponse() != null) {
             String aiReply = extractAiReply(response.chatResponse());
             if (aiReply != null) {
-                analysisService.recordAssistantMessage(conversationId, aiReply);
+                neo4jExecutor.execute(() -> {
+                    try {
+                        analysisService.recordAssistantMessage(conversationId, aiReply);
+                    } catch (Exception e) {
+                        log.warn("Neo4j 异步写入AI回复失败: {}", e.getMessage());
+                    }
+                });
             }
         }
 
@@ -86,9 +112,15 @@ public class ConversationGraphAdvisor implements CallAdvisor, StreamAdvisor {
         String conversationId = extractConversationId(chatClientRequest);
         String userMessage = extractUserMessage(chatClientRequest);
 
-        // 记录用户消息
+        // 🔴 异步记录用户消息到 Neo4j（不阻塞 LLM 流式调用）
         if (conversationId != null && userMessage != null) {
-            analysisService.recordUserMessage(conversationId, userMessage);
+            neo4jExecutor.execute(() -> {
+                try {
+                    analysisService.recordUserMessage(conversationId, userMessage);
+                } catch (Exception e) {
+                    log.warn("Neo4j 异步写入用户消息失败: {}", e.getMessage());
+                }
+            });
         }
 
         // 流式收集 AI 回复
@@ -104,7 +136,13 @@ public class ConversationGraphAdvisor implements CallAdvisor, StreamAdvisor {
                 })
                 .doOnComplete(() -> {
                     if (conversationId != null && aiReplyBuffer.length() > 0) {
-                        analysisService.recordAssistantMessage(conversationId, aiReplyBuffer.toString());
+                        neo4jExecutor.execute(() -> {
+                            try {
+                                analysisService.recordAssistantMessage(conversationId, aiReplyBuffer.toString());
+                            } catch (Exception e) {
+                                log.warn("Neo4j 异步写入AI回复失败: {}", e.getMessage());
+                            }
+                        });
                     }
                 });
     }

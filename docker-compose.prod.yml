@@ -1,0 +1,160 @@
+version: '3.8'
+
+# ============================================
+# 生产环境完整部署编排
+# 使用: docker-compose -f docker-compose.prod.yml up -d
+# ============================================
+
+services:
+  # ========== 1. PostgreSQL + PGVector 向量数据库 ==========
+  qian-pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: qian-pgvector
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ${PGVECTOR_USER:-postgres}
+      POSTGRES_PASSWORD: ${PGVECTOR_PASSWORD}
+      POSTGRES_DB: ${PGVECTOR_DATABASE:-qian_ai_agent}
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - qian-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGVECTOR_USER:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== 2. Neo4j 图数据库 ==========
+  qian-neo4j:
+    image: neo4j:5
+    container_name: qian-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    restart: unless-stopped
+    networks:
+      - qian-net
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u ${NEO4J_USER:-neo4j} -p ${NEO4J_PASSWORD} 'RETURN 1' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+
+  # ========== 3. Redis 缓存 ==========
+  qian-redis:
+    image: redis:7-alpine
+    container_name: qian-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - qian-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ========== 4. MySQL 数据库 ==========
+  qian-mysql:
+    image: mysql:8.0
+    container_name: qian-mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-qian_ai_agent}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - qian-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ========== 5. Spring Boot 后端 ==========
+  qian-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qian-backend
+    ports:
+      - "8123:8123"
+    environment:
+      # 数据库连接（指向 Docker 内部网络的服务名）
+      - MYSQL_HOST=qian-mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-qian_ai_agent}
+      - REDIS_HOST=qian-redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - NEO4J_HOST=qian-neo4j
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - PGVECTOR_HOST=qian-pgvector
+      - PGVECTOR_PORT=5432
+      - PGVECTOR_USER=${PGVECTOR_USER:-postgres}
+      - PGVECTOR_PASSWORD=${PGVECTOR_PASSWORD}
+      - PGVECTOR_DATABASE=${PGVECTOR_DATABASE:-qian_ai_agent}
+      # AI API Keys
+      - SPRING_AI_OPENAI_API_KEY=${SPRING_AI_OPENAI_API_KEY}
+      - SPRING_AI_OPENAI_BASE_URL=${SPRING_AI_OPENAI_BASE_URL:-https://api.deepseek.com}
+      - SPRING_AI_DASHSCOPE_API_KEY=${SPRING_AI_DASHSCOPE_API_KEY}
+      # JWT
+      - JWT_SECRET=${JWT_SECRET}
+      # Tavily 搜索
+      - SEARCH_API_API_KEY=${SEARCH_API_API_KEY}
+    depends_on:
+      qian-mysql:
+        condition: service_healthy
+      qian-redis:
+        condition: service_healthy
+      qian-neo4j:
+        condition: service_healthy
+      qian-pgvector:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - qian-net
+
+  # ========== 6. Vue 前端 (Nginx) ==========
+  qian-frontend:
+    build:
+      context: ./qian-ai-agent-frontend
+      dockerfile: Dockerfile
+    container_name: qian-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - qian-backend
+    restart: unless-stopped
+    networks:
+      - qian-net
+
+volumes:
+  pgvector_data:
+  neo4j_data:
+  neo4j_logs:
+  mysql_data:
+  redis_data:
+
+networks:
+  qian-net:
+    driver: bridge

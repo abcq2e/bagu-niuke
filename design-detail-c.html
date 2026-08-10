@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 C 详细设计 — 极简精英风</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+    background: #f8fafc; color: #1e293b; min-height: 100vh;
+  }
+
+  /* ===== PAGE ===== */
+  .page {
+    max-width: 1000px; margin: 0 auto; padding: 32px 24px 80px;
+  }
+  .page h1 { font-size: 26px; font-weight: 700; color:#0f172a; text-align:center; margin-bottom:4px; }
+  .page > .sub { text-align:center; font-size:14px; color:#64748b; margin-bottom:40px; }
+
+  /* ===== SECTION TITLES ===== */
+  .sec-title {
+    font-size: 14px; font-weight: 700; color: #3b82f6;
+    text-transform: uppercase; letter-spacing: 1px;
+    margin: 40px 0 16px; padding-bottom: 8px;
+    border-bottom: 2px solid #eff6ff;
+  }
+  .sec-title:first-of-type { margin-top: 0; }
+
+  /* ===== COMPONENT WRAPPER ===== */
+  .comp {
+    background: #fff; border: 1px solid #f1f5f9; border-radius: 14px;
+    margin-bottom: 20px; overflow: hidden;
+  }
+  .comp-header {
+    padding: 12px 20px; background: #fafbfc; border-bottom: 1px solid #f1f5f9;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; color: #64748b;
+  }
+  .comp-header .dot { width:6px; height:6px; border-radius:50%; }
+  .comp-header .dot.live { background:#3b82f6; }
+  .comp-header .dot.static { background:#94a3b8; }
+  .comp-body { padding: 24px; display:flex; gap:24px; flex-wrap:wrap; align-items:flex-start; }
+  .comp-body.col { flex-direction: column; }
+
+  /* ===== STATE LABEL ===== */
+  .state-group { flex:1; min-width: 220px; }
+  .state-label {
+    font-size: 10px; font-weight: 700; color:#94a3b8; text-transform:uppercase;
+    letter-spacing:.6px; margin-bottom:10px;
+  }
+
+  /* ============================================ */
+  /*  1. SIDEBAR CARD  */
+  /* ============================================ */
+  .sb-bg { background:#f9fafb; padding:10px; border-radius:12px; display:inline-block; width:100%; }
+
+  /* Default */
+  .sb-card {
+    display:flex; align-items:center; gap:12px; padding:14px;
+    background:#fff; border:1px solid #e2e8f0;
+    border-left: 3px solid #3b82f6; border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    transition: all .2s;
+    width: 100%;
+  }
+  .sb-card:hover {
+    border-left-color: #2563eb;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  /* Active */
+  .sb-card.active {
+    background: #f8faff; border-color: #bfdbfe; border-left-color: #2563eb;
+    border-left-width: 3px; border-width: 1px 1px 1px 3px;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.08);
+  }
+
+  .sb-icon {
+    width: 34px; height: 34px; border-radius: 8px; flex-shrink:0;
+    color:#3b82f6; display:flex; align-items:center; justify-content:center; font-size:17px;
+  }
+  .sb-info { flex:1; min-width:0; }
+  .sb-title { font-size:13px; font-weight:600; color:#0f172a; letter-spacing:-.1px; }
+  .sb-meta { font-size:10px; color:#94a3b8; margin-top:2px; }
+  .sb-count {
+    font-size:13px; font-weight:700; color:#3b82f6;
+    font-variant-numeric:tabular-nums; font-family: 'SF Mono','Cascadia Code',monospace;
+  }
+  /* Empty / complete state */
+  .sb-card.dim { border-left-color: #e2e8f0; opacity: 0.5; }
+  .sb-card.dim .sb-count { color:#94a3b8; }
+
+  /* ============================================ */
+  /*  2. TOPBAR  */
+  /* ============================================ */
+  .tb {
+    display:flex; align-items:center; gap:14px; padding:16px 28px;
+    background:#fff; border-bottom:1px solid #f1f5f9;
+    border-radius:10px; font-size:13px; width:100%;
+  }
+  .tb-title { font-weight:600; color:#0f172a; font-size:14px; display:flex; align-items:center; gap:6px; }
+  .tb-dir { font-size:11px; color:#64748b; }
+  .tb-spacer { flex:1; }
+
+  /* Step progress */
+  .tb-steps { display:flex; gap:3px; align-items:center; }
+  .tb-step {
+    width:7px; height:7px; border-radius:50%; background:#e2e8f0;
+    transition: all .3s ease;
+  }
+  .tb-step.done { background:#3b82f6; }
+  .tb-step.current {
+    background:#2563eb; box-shadow: 0 0 0 3px rgba(37,99,235,0.2);
+    transform: scale(1.3);
+  }
+  .tb-count { font-size:15px; font-weight:700; color:#3b82f6; font-variant-numeric:tabular-nums; }
+  .tb-total { font-size:12px; color:#94a3b8; }
+
+  /* ============================================ */
+  /*  3. PANEL ENTRY  */
+  /* ============================================ */
+  .pe {
+    display:flex; align-items:center; gap:16px; padding:20px;
+    background:#fff; border-radius:14px; border:1px solid #f1f5f9;
+    transition: all .2s; width:100%;
+  }
+  .pe:hover { border-color:#e2e8f0; }
+  .pe-icon {
+    width: 42px; height: 42px; border-radius: 50%; flex-shrink:0;
+    background: #f8fafc; color:#3b82f6;
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+  }
+  .pe-info { flex:1; min-width:0; }
+  .pe-title { font-size:14px; font-weight:600; color:#0f172a; }
+  .pe-desc { font-size:11px; color:#94a3b8; margin-top:3px; }
+  .pe-arr {
+    width: 38px; height: 38px; border-radius: 50%; flex-shrink:0;
+    background:#3b82f6; color:#fff; display:flex; align-items:center;
+    justify-content:center; font-size:16px; cursor:pointer; border:none;
+    box-shadow: 0 2px 10px rgba(59,130,246,0.25);
+    transition: all .2s;
+  }
+  .pe-arr:hover { background:#2563eb; box-shadow: 0 4px 16px rgba(37,99,235,0.35); transform: scale(1.05); }
+
+  /* No data state */
+  .pe.empty { opacity: 0.4; pointer-events: none; }
+  .pe.empty .pe-arr { background:#cbd5e1; box-shadow: none; }
+
+  /* ============================================ */
+  /*  COLOR SWATCHES  */
+  /* ============================================ */
+  .swatches { display:flex; gap:10px; flex-wrap:wrap; }
+  .swatch { text-align:center; }
+  .swatch-box {
+    width:56px; height:56px; border-radius:12px; margin-bottom:4px;
+    border:1px solid rgba(0,0,0,0.06);
+  }
+  .swatch-name { font-size:10px; color:#64748b; }
+  .swatch-hex { font-size:10px; font-weight:700; color:#0f172a; font-family:'SF Mono',monospace; }
+
+  /* ============================================ */
+  /*  ALL TOGETHER  */
+  /* ============================================ */
+  .full-scene {
+    display:flex; gap:0; background:#fff; border-radius:16px; overflow:hidden;
+    border:1px solid #e2e8f0; min-height:420px;
+  }
+  .full-sidebar {
+    width:260px; min-width:260px; background:#f9fafb; border-right:1px solid #e8ecf1;
+    padding:16px 14px; display:flex; flex-direction:column; gap:12px;
+  }
+  .full-sidebar .sect-label {
+    font-size:10px; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:.5px;
+  }
+  .full-main { flex:1; display:flex; flex-direction:column; }
+  .full-msg-area { flex:1; display:flex; align-items:center; justify-content:center; }
+  .full-msg-inner {
+    text-align:center; color:#94a3b8;
+  }
+  .full-msg-inner h3 { font-size:20px; font-weight:700; color:#0f172a; margin-bottom:4px; }
+  .full-msg-inner p { font-size:13px; }
+
+  /* Fake conv items */
+  .fake-conv {
+    padding:10px 12px; border-radius:8px; font-size:12px; color:#374151;
+    background:#fff; border:1px solid #f1f5f9;
+  }
+  .fake-conv.active { background:#e0e7ff; border-color:#c7d2fe; color:#4f46e5; font-weight:600; }
+
+  .design-note {
+    margin-top: 40px; padding: 20px 24px;
+    background: linear-gradient(135deg, #eff6ff, #f9fafb);
+    border: 1px solid #bfdbfe; border-radius: 14px;
+  }
+  .design-note h3 { font-size: 15px; font-weight: 700; color: #1e40af; margin-bottom: 10px; }
+  .design-note ul { padding-left:18px; font-size:13px; color:#475569; line-height:2; }
+  .design-note ul li strong { color: #0f172a; }
+</style>
+</head>
+<body>
+
+<div class="page">
+  <h1>方案 C：极简精英风 — 详细设计</h1>
+  <p class="sub">白色为主 · 蓝作点睛 · 左边框 · 分段步进 · 圆形按钮 · 大量留白</p>
+
+  <!-- ===== COLOR SYSTEM ===== -->
+  <div class="sec-title">🎨 配色系统</div>
+  <div class="swatches">
+    <div class="swatch"><div class="swatch-box" style="background:#3b82f6"></div><div class="swatch-hex">#3b82f6</div><div class="swatch-name">主强调</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#2563eb"></div><div class="swatch-hex">#2563eb</div><div class="swatch-name">深蓝 hover</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#eff6ff"></div><div class="swatch-hex">#eff6ff</div><div class="swatch-name">极浅蓝底</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#bfdbfe"></div><div class="swatch-hex">#bfdbfe</div><div class="swatch-name">淡蓝边框</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#f8faff"></div><div class="swatch-hex">#f8faff</div><div class="swatch-name">激活底色</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#0f172a"></div><div class="swatch-hex">#0f172a</div><div class="swatch-name">主文字</div></div>
+    <div class="swatch"><div class="swatch-box" style="background:#fff"></div><div class="swatch-hex">#fff</div><div class="swatch-name">卡片底</div></div>
+  </div>
+
+  <!-- ===== 1. SIDEBAR CARD ===== -->
+  <div class="sec-title">📌 组件一：侧边栏错题卡片</div>
+
+  <div class="comp">
+    <div class="comp-header"><span class="dot live"></span> 三态对比</div>
+    <div class="comp-body">
+      <div class="state-group">
+        <div class="state-label">默认</div>
+        <div class="sb-bg"><div class="sb-card">
+          <div class="sb-icon">📋</div>
+          <div class="sb-info"><div class="sb-title">错题复习</div><div class="sb-meta">3 方向 · 12 道错题</div></div>
+          <span class="sb-count">12</span>
+        </div></div>
+      </div>
+      <div class="state-group">
+        <div class="state-label">激活 / 当前</div>
+        <div class="sb-bg"><div class="sb-card active">
+          <div class="sb-icon">📋</div>
+          <div class="sb-info"><div class="sb-title">错题复习</div><div class="sb-meta">3 方向 · 12 道错题</div></div>
+          <span class="sb-count">12</span>
+        </div></div>
+      </div>
+      <div class="state-group">
+        <div class="state-label">全部清除（完成态）</div>
+        <div class="sb-bg"><div class="sb-card dim">
+          <div class="sb-icon">✅</div>
+          <div class="sb-info"><div class="sb-title">错题复习</div><div class="sb-meta">全部掌握</div></div>
+          <span class="sb-count">0</span>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="design-note" style="margin-top:12px;">
+    <h3>设计要点</h3>
+    <ul>
+      <li><strong>3px 左边框</strong> — 蓝色竖线是唯一色彩信号，克制但明确</li>
+      <li>徽章用 <strong>等宽数字 + 纯蓝字</strong>，不用色块包裹，更轻盈</li>
+      <li>激活态加 <strong>3px 蓝色外光晕</strong>（box-shadow），不依赖背景色</li>
+      <li>图标保持无色，用 SVG 线条图标，继承蓝色</li>
+      <li>完成态降透明度 + 灰左边框，不消失但弱化</li>
+    </ul>
+  </div>
+
+  <!-- ===== 2. TOPBAR ===== -->
+  <div class="sec-title">📌 组件二：复习顶栏</div>
+
+  <div class="comp">
+    <div class="comp-header"><span class="dot live"></span> 进度状态</div>
+    <div class="comp-body col">
+      <div class="state-label">复习中 · 4/12 完成</div>
+      <div class="tb">
+        <span class="tb-title">错题复习</span>
+        <span class="tb-dir">· Java并发</span>
+        <span class="tb-spacer"></span>
+        <div class="tb-steps">
+          <span class="tb-step done"></span>
+          <span class="tb-step done"></span>
+          <span class="tb-step done"></span>
+          <span class="tb-step done"></span>
+          <span class="tb-step current"></span>
+          <span class="tb-step"></span>
+          <span class="tb-step"></span>
+          <span class="tb-step"></span>
+          <span class="tb-step"></span>
+          <span class="tb-step"></span>
+          <span class="tb-step"></span>
+          <span class="tb-step"></span>
+        </div>
+        <span class="tb-count">4</span>
+        <span class="tb-total">/ 12</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="design-note" style="margin-top:12px;">
+    <h3>设计要点</h3>
+    <ul>
+      <li><strong>分段步进圆点</strong> — 用 12 个小圆点代替传统进度条，每个点代表一道题</li>
+      <li>完成的点变蓝，<strong>当前点放大 + 发光环</strong>，更有"此刻"的焦点感</li>
+      <li>分数 <strong>大号等宽数字</strong>，分子蓝色加粗，分母灰色小字</li>
+      <li>白底 + 极细底边框，保持轻盈</li>
+    </ul>
+  </div>
+
+  <!-- ===== 3. PANEL ENTRY ===== -->
+  <div class="sec-title">📌 组件三：能力面板入口</div>
+
+  <div class="comp">
+    <div class="comp-header"><span class="dot live"></span> 有错题 / 无错题</div>
+    <div class="comp-body">
+      <div class="state-group" style="flex:2; min-width:280px;">
+        <div class="state-label">有错题待复习</div>
+        <div class="pe">
+          <div class="pe-icon">📋</div>
+          <div class="pe-info"><div class="pe-title">错题复习</div><div class="pe-desc">3 个方向 · 12 道错题待复习</div></div>
+          <button class="pe-arr">→</button>
+        </div>
+      </div>
+      <div class="state-group" style="flex:1; min-width:180px;">
+        <div class="state-label">无错题 / 不显示</div>
+        <div class="pe empty">
+          <div class="pe-icon">✅</div>
+          <div class="pe-info"><div class="pe-title">错题复习</div><div class="pe-desc">暂无错题</div></div>
+          <button class="pe-arr">→</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="design-note" style="margin-top:12px;">
+    <h3>设计要点</h3>
+    <ul>
+      <li><strong>圆形图标</strong> — 灰白底色，区别于其他组件的圆角方块图标</li>
+      <li><strong>圆形箭头按钮</strong> — 蓝色实心圆 + 白色箭头，悬停放大，像播放按钮</li>
+      <li>整体用 <strong>更多 padding（20px）+ 更大圆角（14px）</strong>，制造呼吸感</li>
+      <li>无错题时整个卡片降透明度变灰，箭头变灰不可点击</li>
+    </ul>
+  </div>
+
+  <!-- ===== FULL SCENE ===== -->
+  <div class="sec-title">🖼️ 场景合体预览</div>
+  <div class="full-scene">
+    <div class="full-sidebar">
+      <div class="sect-label">错题复习</div>
+      <div class="sb-card">
+        <div class="sb-icon">📋</div>
+        <div class="sb-info"><div class="sb-title">错题复习</div><div class="sb-meta">3 方向 · 12 道错题</div></div>
+        <span class="sb-count">12</span>
+      </div>
+      <div style="height:1px;background:#e8ecf1;margin:4px 0;"></div>
+      <div class="sect-label">面试对话</div>
+      <div class="fake-conv" style="margin-bottom:4px;">Java 并发面试</div>
+      <div class="fake-conv">Spring 框架考察</div>
+      <div class="fake-conv">系统设计讨论</div>
+    </div>
+    <div class="full-main">
+      <div class="tb" style="border-radius:0;">
+        <span class="tb-title">错题复习</span>
+        <span class="tb-dir">· Java并发</span>
+        <span class="tb-spacer"></span>
+        <div class="tb-steps">
+          <span class="tb-step done"></span><span class="tb-step done"></span>
+          <span class="tb-step done"></span><span class="tb-step done"></span>
+          <span class="tb-step current"></span>
+          <span class="tb-step"></span><span class="tb-step"></span><span class="tb-step"></span>
+          <span class="tb-step"></span><span class="tb-step"></span><span class="tb-step"></span><span class="tb-step"></span>
+        </div>
+        <span class="tb-count">4</span>
+        <span class="tb-total">/ 12</span>
+      </div>
+      <div class="full-msg-area">
+        <div class="full-msg-inner">
+          <h3>错题复习</h3>
+          <p>按方向顺序考察错题，答对自动移除</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== DESIGN PRINCIPLES ===== -->
+  <div class="design-note" style="margin-top:24px;">
+    <h3>🎯 极简精英风 · 设计原则总结</h3>
+    <ul>
+      <li><strong>少即是多</strong> — 白底大面积留白，蓝色只在关键信号处出现</li>
+      <li><strong>左边框 = 身份标识</strong> — 3px 蓝色左边框是唯一的结构色，替换了传统的彩色背景</li>
+      <li><strong>圆点 > 进度条</strong> — 分段步进比连续进度条更有"题目感"</li>
+      <li><strong>圆形按钮 = 行动召唤</strong> — 蓝色实心圆箭头是整个界面最重的色彩元素，引导点击</li>
+      <li><strong>等宽数字 = 数据感</strong> — 用 tabular-nums 让数字对齐不跳动</li>
+      <li><strong>光晕代替背景色</strong> — 激活态用 box-shadow 光晕，不靠大面积换色</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

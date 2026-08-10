@@ -27,9 +27,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class SummarizingChatMemory implements ChatMemory {
 
     /**
-     * 最大保留的消息条数（40 条 = 约 20 轮对话）
+     * 最大保留的消息条数（20 条 = 约 10 轮对话，给面试点评提供充足上下文）
      */
-    private static final int DEFAULT_MAX_MESSAGES = 40;
+    private static final int DEFAULT_MAX_MESSAGES = 20;
 
     private final FileBasedChatMemory delegate;
     private final ConversationSummarizer summarizer;
@@ -55,17 +55,16 @@ public class SummarizingChatMemory implements ChatMemory {
     }
 
     /**
-     * 获取窗口化的对话历史 —— 超过阈值时返回 [摘要] + [最近 N 条原文]
+     * 获取窗口化的对话历史 —— 超过阈值时返回 [受保护消息] + [摘要] + [最近 N 条原文]。
+     * <p>
+     * 🔴 包含【方向切换】的 SystemMessage 永远不被摘要，始终保留。
      */
     @Override
     public List<Message> get(String conversationId) {
         List<Message> all = delegate.get(conversationId);
-
         if (all.isEmpty() || all.size() <= maxMessages) {
             return all;
         }
-
-        // 检查缓存
         CachedSummary cached = summaryCache.get(conversationId);
         if (cached != null && cached.totalMessageCount == all.size()) {
             log.debug("使用缓存的对话摘要: chatId={}, summaryLen={}",
@@ -73,21 +72,41 @@ public class SummarizingChatMemory implements ChatMemory {
             return buildResult(cached.summary, cached.recentMessages);
         }
 
-        // 需要重新生成摘要
-        int summaryCount = all.size() - maxMessages;
-        List<Message> toSummarize = all.subList(0, summaryCount);
-        List<Message> recent = new ArrayList<>(all.subList(summaryCount, all.size()));
+        // 🔴 保护【方向切换】消息不被摘要
+        List<Message> protectedMsgs = new ArrayList<>();
+        int firstUnprotected = 0;
+        for (int i = 0; i < all.size(); i++) {
+            Message msg = all.get(i);
+            String text = msg.getText();
+            if (text != null && text.contains("【方向切换】")) {
+                protectedMsgs.add(msg);
+                firstUnprotected = i + 1;
+            } else {
+                break; // 只在开头连续查找，遇到非保护消息就停止
+            }
+        }
 
-        log.info("触发对话摘要: chatId={}, 总消息={}, 需摘要={}, 保留={}",
-                conversationId, all.size(), summaryCount, recent.size());
+        int effectiveMax = maxMessages - protectedMsgs.size();
+        List<Message> rest = all.subList(firstUnprotected, all.size());
+        if (rest.size() <= effectiveMax) {
+            // 减去受保护消息后不超阈值，全量返回
+            List<Message> result = new ArrayList<>(protectedMsgs);
+            result.addAll(rest);
+            return result;
+        }
 
+        int summaryCount = rest.size() - effectiveMax;
+        List<Message> toSummarize = rest.subList(0, summaryCount);
+        List<Message> recent = new ArrayList<>(rest.subList(summaryCount, rest.size()));
+        log.info("触发对话摘要: chatId={}, 总消息={}, 受保护={}, 需摘要={}, 保留={}",
+                conversationId, all.size(), protectedMsgs.size(), summaryCount, recent.size());
         String summary = summarizer.summarize(toSummarize);
-
-        // 更新缓存
         summaryCache.put(conversationId,
                 new CachedSummary(summary, recent, all.size()));
-
-        return buildResult(summary, recent);
+        // 受保护消息放在摘要前面，确保 AI 优先看到
+        List<Message> result = new ArrayList<>(protectedMsgs);
+        result.addAll(buildResult(summary, recent));
+        return result;
     }
 
     @Override
@@ -100,6 +119,11 @@ public class SummarizingChatMemory implements ChatMemory {
     @Override
     public void clear(String conversationId) {
         delegate.clear(conversationId);
+        summaryCache.remove(conversationId);
+    }
+
+    /** 换方向裁剪后作废摘要缓存 */
+    public void invalidateSummary(String conversationId) {
         summaryCache.remove(conversationId);
     }
 

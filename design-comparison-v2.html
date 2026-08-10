@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>错题复习 UI 升级方案 V2</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', system-ui, sans-serif;
+    background: #f8fafc; color: #1e293b; min-height: 100vh;
+  }
+  .header {
+    background: #fff; border-bottom: 1px solid #e2e8f0;
+    padding: 36px 40px; text-align: center;
+  }
+  .header h1 { font-size: 28px; font-weight: 700; color: #0f172a; margin-bottom: 6px; }
+  .header p { font-size: 14px; color: #64748b; }
+
+  .container { max-width: 1300px; margin: 0 auto; padding: 32px 24px; }
+  .schemes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+
+  .scheme-card {
+    background: #fff; border-radius: 16px; overflow: hidden;
+    border: 2px solid #e2e8f0; transition: all .25s; cursor: pointer;
+  }
+  .scheme-card:hover { transform: translateY(-2px); box-shadow: 0 12px 40px rgba(0,0,0,0.1); }
+  .scheme-card.selected { border-color: #4f46e5; box-shadow: 0 12px 40px rgba(79,70,229,0.18); transform: translateY(-2px); }
+
+  .scheme-header {
+    padding: 16px 20px; display: flex; align-items: center; gap: 10px;
+    font-size: 15px; font-weight: 700; color: #fff;
+  }
+  .scheme-header .badge {
+    width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; flex-shrink: 0;
+  }
+  .scheme-body { padding: 20px; }
+
+  .mock-section { margin-bottom: 18px; }
+  .mock-section:last-child { margin-bottom: 0; }
+  .mock-label {
+    font-size: 10px; font-weight: 600; color: #94a3b8; text-transform: uppercase;
+    letter-spacing: 0.8px; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;
+  }
+  .mock-label::after { content:''; flex:1; height:1px; background:#e2e8f0; }
+
+  .desc-box {
+    margin-top: 12px; padding: 12px 14px; background: #f8fafc; border-radius: 10px;
+    font-size: 12px; color: #64748b; line-height: 1.7;
+  }
+  .desc-box strong { color: #0f172a; }
+
+  .selected-indicator {
+    display: none; text-align: center; padding: 8px 0 14px;
+    font-size: 13px; font-weight: 700; color: #4f46e5;
+  }
+  .scheme-card.selected .selected-indicator { display: block; }
+
+  .vibe-tag {
+    display: inline-block; font-size: 10px; font-weight: 600; padding: 3px 8px;
+    border-radius: 10px; margin: 2px;
+  }
+  .vibe-plus { background:#ecfdf5; color:#059669; }
+  .vibe-note { background:#fffbeb; color:#d97706; }
+
+  /* ============================================ */
+  /*  SCHEME A: 毛玻璃轻奢风  */
+  /* ============================================ */
+  .style-a .scheme-header { background: linear-gradient(135deg, #1e3a5f, #2563eb); }
+
+  /* Glass sidebar card */
+  .a-sbar-wrap { background:#f9fafb; padding:8px; border-radius:10px; }
+  .a-sbar-card {
+    display:flex; align-items:center; gap:12px; padding:16px 14px;
+    background: linear-gradient(135deg, rgba(239,246,255,0.9), rgba(255,255,255,0.7));
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(59,130,246,0.08), inset 0 1px 0 rgba(255,255,255,0.6);
+    cursor: pointer; position: relative; overflow: hidden;
+  }
+  .a-sbar-card::before {
+    content:''; position:absolute; top:-30px; right:-30px;
+    width:80px; height:80px; border-radius:50%;
+    background: radial-gradient(circle, rgba(59,130,246,0.06), transparent 70%);
+    pointer-events: none;
+  }
+  .a-sbar-icon {
+    width: 38px; height: 38px; border-radius: 12px; flex-shrink:0;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color:#fff; display:flex; align-items:center; justify-content:center; font-size:16px;
+    box-shadow: 0 4px 12px rgba(37,99,235,0.3);
+  }
+  .a-sbar-info { flex:1; min-width:0; position:relative; z-index:1; }
+  .a-sbar-title { font-size:13px; font-weight:700; color:#1e3a5f; letter-spacing:.2px; }
+  .a-sbar-meta { font-size:10px; color:#3b82f6; margin-top:2px; font-weight:500; }
+  .a-sbar-badge {
+    font-size:11px; font-weight:700; color:#fff;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    padding:4px 10px; border-radius:20px;
+    box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+  }
+
+  /* Glass topbar */
+  .a-tbar {
+    display:flex; align-items:center; gap:14px; padding:16px 24px;
+    background: linear-gradient(135deg, rgba(239,246,255,0.95), rgba(248,250,252,0.9));
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(59,130,246,0.15);
+    border-radius: 12px; font-size:13px;
+    box-shadow: 0 1px 8px rgba(59,130,246,0.04);
+  }
+  .a-tbar-icon {
+    width: 32px; height: 32px; border-radius: 10px;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color:#fff; display:flex; align-items:center; justify-content:center; font-size:14px;
+    box-shadow: 0 3px 10px rgba(37,99,235,0.25);
+  }
+  .a-tbar-title { font-weight:700; color:#1e3a5f; }
+  .a-tbar-dir { font-size:12px; color:#64748b; font-weight:500; }
+  .a-tbar-spacer { flex:1; }
+  .a-tbar-stat { display:flex; align-items:center; gap:10px; font-size:12px; color:#475569; }
+  .a-tbar-bar {
+    width:90px; height:6px; background:rgba(59,130,246,0.1);
+    border-radius:4px; overflow:hidden;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+  }
+  .a-tbar-fill {
+    height:100%; border-radius:4px;
+    background: linear-gradient(to right, #2563eb, #6366f1);
+    box-shadow: 0 0 8px rgba(37,99,235,0.4);
+    transition: width .5s ease;
+  }
+
+  /* Glass panel entry */
+  .a-entry {
+    display:flex; align-items:center; gap:14px; padding:18px;
+    background: #fff; border-radius: 16px;
+    border: 1px solid rgba(59,130,246,0.12);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.03), 0 0 0 1px rgba(59,130,246,0.03);
+  }
+  .a-entry-icon {
+    width: 42px; height: 42px; border-radius: 14px; flex-shrink:0;
+    background: linear-gradient(135deg, #eff6ff, #dbeafe);
+    color:#3b82f6; display:flex; align-items:center; justify-content:center; font-size:17px;
+  }
+  .a-entry-info { flex:1; min-width:0; }
+  .a-entry-title { font-size:14px; font-weight:700; color:#0f172a; }
+  .a-entry-desc { font-size:11px; color:#64748b; margin-top:3px; }
+  .a-entry-btn {
+    padding:10px 20px; border-radius:12px; font-size:13px; font-weight:600;
+    cursor:pointer; border:none; white-space:nowrap; transition: all .2s;
+    background: linear-gradient(135deg, #2563eb, #3b82f6);
+    color:#fff; box-shadow: 0 4px 14px rgba(37,99,235,0.3);
+  }
+
+  /* ============================================ */
+  /*  SCHEME B: 暗色沉浸风  */
+  /* ============================================ */
+  .style-b .scheme-header { background: linear-gradient(135deg, #0f172a, #1e3a5f); }
+
+  .b-sbar-wrap { background:#f9fafb; padding:8px; border-radius:10px; }
+  .b-sbar-card {
+    display:flex; align-items:center; gap:12px; padding:14px;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: 14px; cursor: pointer;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+  }
+  .b-sbar-icon {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink:0;
+    background: rgba(59,130,246,0.2);
+    color:#60a5fa; display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+  .b-sbar-info { flex:1; min-width:0; }
+  .b-sbar-title { font-size:13px; font-weight:700; color:#e2e8f0; }
+  .b-sbar-meta { font-size:10px; color:#60a5fa; margin-top:2px; }
+  .b-sbar-badge {
+    font-size:10px; font-weight:700; color:#93c5fd;
+    background:rgba(59,130,246,0.15); padding:3px 10px; border-radius:20px;
+    border: 1px solid rgba(59,130,246,0.25);
+  }
+
+  .b-tbar {
+    display:flex; align-items:center; gap:14px; padding:14px 24px;
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    border-bottom: 1px solid rgba(59,130,246,0.2);
+    border-radius: 12px; font-size:13px; color:#e2e8f0;
+  }
+  .b-tbar-icon {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: rgba(59,130,246,0.2); color:#60a5fa;
+    display:flex; align-items:center; justify-content:center; font-size:13px;
+  }
+  .b-tbar-title { font-weight:700; }
+  .b-tbar-dir { font-size:12px; color:#60a5fa; }
+  .b-tbar-spacer { flex:1; }
+  .b-tbar-stat { display:flex; align-items:center; gap:10px; font-size:12px; color:#94a3b8; }
+  .b-tbar-bar { width:90px; height:5px; background:rgba(255,255,255,0.08); border-radius:3px; overflow:hidden; }
+  .b-tbar-fill {
+    height:100%; border-radius:3px;
+    background: linear-gradient(to right, #3b82f6, #818cf8);
+    box-shadow: 0 0 10px rgba(59,130,246,0.5);
+  }
+
+  .b-entry {
+    display:flex; align-items:center; gap:14px; padding:18px;
+    background: #fff; border-radius: 16px;
+    border: 1px solid #e2e8f0;
+  }
+  .b-entry-icon {
+    width: 42px; height: 42px; border-radius: 12px; flex-shrink:0;
+    background: #f1f5f9; color:#475569;
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+  }
+  .b-entry-info { flex:1; min-width:0; }
+  .b-entry-title { font-size:14px; font-weight:700; color:#0f172a; }
+  .b-entry-desc { font-size:11px; color:#94a3b8; margin-top:3px; }
+  .b-entry-btn {
+    padding:10px 20px; border-radius:12px; font-size:13px; font-weight:600;
+    cursor:pointer; border:none; white-space:nowrap; transition: all .2s;
+    background:#0f172a; color:#fff;
+  }
+
+  /* ============================================ */
+  /*  SCHEME C: 极简精英风  */
+  /* ============================================ */
+  .style-c .scheme-header { background: linear-gradient(135deg, #1e293b, #334155); }
+
+  .c-sbar-wrap { background:#f9fafb; padding:8px; border-radius:10px; }
+  .c-sbar-card {
+    display:flex; align-items:center; gap:12px; padding:14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #3b82f6;
+    border-radius: 10px; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    transition: all .2s;
+  }
+  .c-sbar-icon {
+    width: 34px; height: 34px; border-radius: 8px; flex-shrink:0;
+    color:#3b82f6;
+    display:flex; align-items:center; justify-content:center; font-size:17px;
+  }
+  .c-sbar-info { flex:1; min-width:0; }
+  .c-sbar-title { font-size:13px; font-weight:600; color:#0f172a; letter-spacing:-.1px; }
+  .c-sbar-meta { font-size:10px; color:#94a3b8; margin-top:2px; }
+  .c-sbar-badge {
+    font-size:12px; font-weight:700; color:#3b82f6;
+    font-variant-numeric: tabular-nums; font-family: 'SF Mono','Cascadia Code',monospace;
+  }
+
+  .c-tbar {
+    display:flex; align-items:center; gap:14px; padding:14px 28px;
+    background: #fff; border-bottom: 1px solid #f1f5f9;
+    border-radius: 12px; font-size:13px;
+  }
+  .c-tbar-steps { display:flex; gap:4px; }
+  .c-step {
+    width:28px; height:4px; border-radius:2px; background:#e2e8f0;
+    transition: all .3s;
+  }
+  .c-step.done { background:#3b82f6; }
+  .c-step.current { background:#6366f1; box-shadow: 0 0 6px rgba(99,102,241,0.4); }
+  .c-tbar-title { font-weight:600; color:#0f172a; font-size:13px; }
+  .c-tbar-dir { font-size:11px; color:#64748b; }
+  .c-tbar-spacer { flex:1; }
+  .c-tbar-count { font-size:13px; font-weight:700; color:#3b82f6; }
+  .c-tbar-total { font-size:12px; color:#94a3b8; }
+
+  .c-entry {
+    display:flex; align-items:center; gap:14px; padding:18px;
+    background: #fff; border-radius: 14px;
+    border: 1px solid #f1f5f9;
+  }
+  .c-entry-icon {
+    width: 40px; height: 40px; border-radius: 50%; flex-shrink:0;
+    background: #f8fafc; color:#3b82f6;
+    display:flex; align-items:center; justify-content:center; font-size:16px;
+  }
+  .c-entry-info { flex:1; min-width:0; }
+  .c-entry-title { font-size:13px; font-weight:600; color:#0f172a; }
+  .c-entry-desc { font-size:10px; color:#94a3b8; margin-top:2px; }
+  .c-entry-arrow {
+    width: 36px; height: 36px; border-radius: 50%; flex-shrink:0;
+    background: #3b82f6; color:#fff; display:flex; align-items:center;
+    justify-content:center; font-size:16px; cursor:pointer; border:none;
+    box-shadow: 0 2px 8px rgba(59,130,246,0.25);
+  }
+
+  @media (max-width: 1100px) { .schemes { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>错题复习 — 升级版设计方案</h1>
+  <p>三种不同气质的高级感设计，使用蓝色系。点击卡片选中。</p>
+</div>
+
+<div class="container">
+  <div class="schemes">
+
+    <!-- ===== A: 毛玻璃轻奢 ===== -->
+    <div class="scheme-card style-a" id="card-a" onclick="select('A')">
+      <div class="scheme-header"><span class="badge">A</span> 毛玻璃轻奢风</div>
+      <div class="scheme-body">
+
+        <div class="mock-section">
+          <div class="mock-label">侧边栏卡片</div>
+          <div class="a-sbar-wrap">
+            <div class="a-sbar-card">
+              <div class="a-sbar-icon">📋</div>
+              <div class="a-sbar-info">
+                <div class="a-sbar-title">错题复习</div>
+                <div class="a-sbar-meta">3 方向 · 12 道错题</div>
+              </div>
+              <span class="a-sbar-badge">12</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">复习顶栏</div>
+          <div class="a-tbar">
+            <div class="a-tbar-icon">📋</div>
+            <span class="a-tbar-title">错题复习</span>
+            <span class="a-tbar-dir">· Java并发</span>
+            <span class="a-tbar-spacer"></span>
+            <span class="a-tbar-stat">
+              <span class="a-tbar-bar"><span class="a-tbar-fill" style="width:33%"></span></span>
+              <span>4 / 12</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">能力面板入口</div>
+          <div class="a-entry">
+            <div class="a-entry-icon">📋</div>
+            <div class="a-entry-info">
+              <div class="a-entry-title">错题复习</div>
+              <div class="a-entry-desc">3 个方向 · 12 道错题待复习</div>
+            </div>
+            <button class="a-entry-btn">进入复习</button>
+          </div>
+        </div>
+
+        <div class="desc-box">
+          <strong>关键词：</strong>通透 · 精致 · 现代<br>
+          毛玻璃效果 + 微渐变 + 发光阴影。图标和徽章有蓝色渐变和投影，卡片有若隐若现的光晕纹理。像 Apple 的设计语言，干净但有层次。
+        </div>
+        <div style="margin-top:6px;">
+          <span class="vibe-tag vibe-plus">✦ 层次丰富</span>
+          <span class="vibe-tag vibe-plus">✦ 现代感强</span>
+          <span class="vibe-tag vibe-note">△ 效果依赖 CSS bg</span>
+        </div>
+      </div>
+      <div class="selected-indicator">✅ 已选择方案 A</div>
+    </div>
+
+    <!-- ===== B: 暗色沉浸 ===== -->
+    <div class="scheme-card style-b" id="card-b" onclick="select('B')">
+      <div class="scheme-header"><span class="badge">B</span> 暗色沉浸风</div>
+      <div class="scheme-body">
+
+        <div class="mock-section">
+          <div class="mock-label">侧边栏卡片</div>
+          <div class="b-sbar-wrap">
+            <div class="b-sbar-card">
+              <div class="b-sbar-icon">📋</div>
+              <div class="b-sbar-info">
+                <div class="b-sbar-title">错题复习</div>
+                <div class="b-sbar-meta">3 方向 · 12 道错题</div>
+              </div>
+              <span class="b-sbar-badge">12</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">复习顶栏</div>
+          <div class="b-tbar">
+            <div class="b-tbar-icon">📋</div>
+            <span class="b-tbar-title">错题复习</span>
+            <span class="b-tbar-dir">· Java并发</span>
+            <span class="b-tbar-spacer"></span>
+            <span class="b-tbar-stat">
+              <span class="b-tbar-bar"><span class="b-tbar-fill" style="width:33%"></span></span>
+              <span>4 / 12</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">能力面板入口</div>
+          <div class="b-entry">
+            <div class="b-entry-icon">📋</div>
+            <div class="b-entry-info">
+              <div class="b-entry-title">错题复习</div>
+              <div class="b-entry-desc">3 个方向 · 12 道错题待复习</div>
+            </div>
+            <button class="b-entry-btn">进入复习</button>
+          </div>
+        </div>
+
+        <div class="desc-box">
+          <strong>关键词：</strong>沉浸 · 专业 · 高端<br>
+          侧边栏和顶栏用深色底 + 蓝色发光元素，像 IDE 的暗色主题。霓虹蓝进度条、半透明边框。在浅色 app 中形成强烈视觉焦点。
+        </div>
+        <div style="margin-top:6px;">
+          <span class="vibe-tag vibe-plus">✦ 视觉冲击强</span>
+          <span class="vibe-tag vibe-plus">✦ 高端科技感</span>
+          <span class="vibe-tag vibe-note">△ 与整体反差大</span>
+        </div>
+      </div>
+      <div class="selected-indicator">✅ 已选择方案 B</div>
+    </div>
+
+    <!-- ===== C: 极简精英 ===== -->
+    <div class="scheme-card style-c" id="card-c" onclick="select('C')">
+      <div class="scheme-header"><span class="badge">C</span> 极简精英风</div>
+      <div class="scheme-body">
+
+        <div class="mock-section">
+          <div class="mock-label">侧边栏卡片</div>
+          <div class="c-sbar-wrap">
+            <div class="c-sbar-card">
+              <div class="c-sbar-icon">📋</div>
+              <div class="c-sbar-info">
+                <div class="c-sbar-title">错题复习</div>
+                <div class="c-sbar-meta">3 方向 · 12 道错题</div>
+              </div>
+              <span class="c-sbar-badge">12</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">复习顶栏（分段步进条）</div>
+          <div class="c-tbar">
+            <span class="c-tbar-title">错题复习</span>
+            <span class="c-tbar-dir">· Java并发</span>
+            <span class="c-tbar-spacer"></span>
+            <div class="c-tbar-steps">
+              <span class="c-step done"></span>
+              <span class="c-step done"></span>
+              <span class="c-step current"></span>
+              <span class="c-step"></span>
+              <span class="c-step"></span>
+            </div>
+            <span class="c-tbar-count">4</span>
+            <span class="c-tbar-total">/ 12</span>
+          </div>
+        </div>
+
+        <div class="mock-section">
+          <div class="mock-label">能力面板入口</div>
+          <div class="c-entry">
+            <div class="c-entry-icon">📋</div>
+            <div class="c-entry-info">
+              <div class="c-entry-title">错题复习</div>
+              <div class="c-entry-desc">3 个方向 · 12 道错题待复习</div>
+            </div>
+            <button class="c-entry-arrow">→</button>
+          </div>
+        </div>
+
+        <div class="desc-box">
+          <strong>关键词：</strong>克制 · 优雅 · 呼吸感<br>
+          白底为主，蓝色做点睛。左边框线条 + 分段步进条 + 圆形箭头按钮。大量留白，精细间距，像高端笔记 app。安静但精致。
+        </div>
+        <div style="margin-top:6px;">
+          <span class="vibe-tag vibe-plus">✦ 优雅不打扰</span>
+          <span class="vibe-tag vibe-plus">✦ 和整体融合好</span>
+          <span class="vibe-tag vibe-note">△ 可能偏保守</span>
+        </div>
+      </div>
+      <div class="selected-indicator">✅ 已选择方案 C</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+function select(letter) {
+  document.querySelectorAll('.scheme-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById('card-' + letter.toLowerCase()).classList.add('selected');
+}
+</script>
+</body>
+</html>

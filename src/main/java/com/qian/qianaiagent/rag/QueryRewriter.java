@@ -1,5 +1,6 @@
 package com.qian.qianaiagent.rag;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.rag.Query;
@@ -8,7 +9,9 @@ import org.springframework.ai.rag.preretrieval.query.transformation.QueryTransfo
 import org.springframework.ai.rag.preretrieval.query.transformation.RewriteQueryTransformer;
 import org.springframework.stereotype.Component;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 查询重写器 —— RAG 检索前的查询预处理
@@ -24,10 +27,17 @@ import java.util.List;
  *    思考：什么场景下值得付出这个代价？
  */
 @Component
+@Slf4j
 public class QueryRewriter {
 
     private final QueryTransformer queryTransformer;
     private final ChatClient.Builder chatClientBuilder;
+
+    /** L1 查询重写 LRU 缓存：同一条消息不重复调 LLM */
+    private final Map<String, String> rewriteCache;
+
+    /** 缓存最大条目数（128 条 ≈ 覆盖常见面试场景的循环追问） */
+    private static final int CACHE_MAX_SIZE = 128;
 
     public QueryRewriter(ChatModel openAiChatModel) {
         ChatClient.Builder builder = ChatClient.builder(openAiChatModel);
@@ -36,6 +46,13 @@ public class QueryRewriter {
         queryTransformer = RewriteQueryTransformer.builder()
                 .chatClientBuilder(builder)
                 .build();
+        // 基于 LinkedHashMap 的 LRU 缓存（access-order=true）
+        this.rewriteCache = new LinkedHashMap<>(16, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                return size() > CACHE_MAX_SIZE;
+            }
+        };
     }
 
     /**
@@ -49,10 +66,12 @@ public class QueryRewriter {
             return prompt;
         }
         String trimmed = prompt.trim();
-        // 短回答（< 15 字）不重写
-        if (trimmed.length() < 15) {
+
+        // 统一快速跳过判断：短消息/长回答/代码片段不调 LLM 重写
+        if (shouldSkipFastPath(trimmed)) {
             return trimmed;
         }
+
         // 不会/忘了/不知道类回复不重写
         if (trimmed.contains("不记得") || trimmed.contains("不会")
                 || trimmed.contains("忘了") || trimmed.contains("不知道")
@@ -65,9 +84,29 @@ public class QueryRewriter {
                 || trimmed.contains("继续") || trimmed.startsWith("你")) {
             return trimmed;
         }
+
+        // 🔴 LRU 缓存命中 → 直接返回，省 1 次 LLM 调用（节省 1-3s）
+        synchronized (rewriteCache) {
+            String cached = rewriteCache.get(trimmed);
+            if (cached != null) {
+                log.debug("♻️ 查询重写缓存命中: len={}", trimmed.length());
+                return cached;
+            }
+        }
+
         Query query = new Query(prompt);
         Query transformedQuery = queryTransformer.transform(query);
-        return transformedQuery.text();
+        String result = transformedQuery.text();
+
+        // 缓存结果（仅缓存非空且与原文不同的结果）
+        if (result != null && !result.isEmpty() && !result.equals(trimmed)) {
+            synchronized (rewriteCache) {
+                rewriteCache.put(trimmed, result);
+                log.debug("💾 查询重写缓存写入: {} → {}", trimmed.length(), result.length());
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -95,6 +134,30 @@ public class QueryRewriter {
                 .build();
         List<Query> queries = queryExpander.expand(new Query(rewritten));
         return queries.stream().map(Query::text).toList();
+    }
+
+    /**
+     * 快速跳过判断：以下情况不调用 LLM 重写，直接返回原文。
+     * <p>
+     * 面试场景下约 80% 的用户消息（长回答/代码）可跳过 LLM 重写，直接节省 1-3s。
+     * 提取为 static package-private 方法，方便单元测试验证规则而无需 Spring 容器。
+     *
+     * @param trimmed 已 trim 的用户消息
+     * @return true 表示应跳过 LLM 重写
+     */
+    static boolean shouldSkipFastPath(String trimmed) {
+        if (trimmed == null || trimmed.isBlank()) return true;
+        // 短消息（< 15 字）：无足够语义做重写，直接返回
+        if (trimmed.length() < 15) return true;
+        // 长回答（> 100 字）：用户在回答面试题，不是在提问，重写无助于检索
+        if (trimmed.length() > 100) return true;
+        // 含代码关键词：用户在写代码示例，跳过重写
+        if (trimmed.contains("public ") || trimmed.contains("class ")
+                || trimmed.contains("return ") || trimmed.contains("{")
+                || trimmed.contains("->") || trimmed.contains("//")) {
+            return true;
+        }
+        return false;
     }
 
     // ================================================================

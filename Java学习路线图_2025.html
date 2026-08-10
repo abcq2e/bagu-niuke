@@ -1,0 +1,581 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Java 学习路线图 2025 - 从入门到精通</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container { max-width: 1100px; margin: 0 auto; padding: 20px; }
+        
+        /* Header */
+        .header {
+            background: linear-gradient(135deg, #007396 0%, #5382A1 50%, #ED8B00 100%);
+            color: white;
+            padding: 60px 20px;
+            text-align: center;
+            border-radius: 16px;
+            margin-bottom: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.15);
+        }
+        .header h1 { font-size: 2.8em; margin-bottom: 10px; letter-spacing: 2px; }
+        .header h1 span { color: #FFD700; }
+        .header p { font-size: 1.2em; opacity: 0.9; }
+        .header .subtitle {
+            margin-top: 15px;
+            font-size: 0.95em;
+            opacity: 0.75;
+            background: rgba(255,255,255,0.15);
+            display: inline-block;
+            padding: 6px 20px;
+            border-radius: 20px;
+        }
+        
+        /* Timeline */
+        .timeline { position: relative; padding: 20px 0; }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 30px;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: linear-gradient(to bottom, #007396, #ED8B00);
+            border-radius: 2px;
+        }
+        
+        .phase {
+            position: relative;
+            margin-bottom: 40px;
+            padding-left: 80px;
+        }
+        .phase-icon {
+            position: absolute;
+            left: 10px;
+            top: 0;
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4em;
+            color: white;
+            z-index: 2;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+        }
+        .phase:nth-child(1) .phase-icon { background: #e74c3c; }
+        .phase:nth-child(2) .phase-icon { background: #e67e22; }
+        .phase:nth-child(3) .phase-icon { background: #f1c40f; color: #333; }
+        .phase:nth-child(4) .phase-icon { background: #2ecc71; }
+        .phase:nth-child(5) .phase-icon { background: #3498db; }
+        .phase:nth-child(6) .phase-icon { background: #9b59b6; }
+        .phase:nth-child(7) .phase-icon { background: #e74c3c; }
+        
+        .phase-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px 30px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .phase-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+        }
+        
+        .phase-title {
+            font-size: 1.5em;
+            font-weight: 700;
+            margin-bottom: 5px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .phase-badge {
+            font-size: 0.5em;
+            background: #e8f4fd;
+            color: #007396;
+            padding: 3px 12px;
+            border-radius: 12px;
+            font-weight: 500;
+        }
+        .phase-desc {
+            color: #666;
+            margin-bottom: 15px;
+            font-size: 0.95em;
+        }
+        
+        .topics {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 10px;
+        }
+        .topic {
+            background: #f8f9fa;
+            padding: 10px 14px;
+            border-radius: 8px;
+            border-left: 3px solid #007396;
+            font-size: 0.92em;
+        }
+        .topic .label {
+            font-weight: 600;
+            color: #007396;
+        }
+        .topic .items {
+            color: #555;
+        }
+        .topic.highlight {
+            border-left-color: #ED8B00;
+            background: #fff8f0;
+        }
+        .topic.highlight .label { color: #c0392b; }
+        
+        .project-box {
+            margin-top: 15px;
+            background: #eafaf1;
+            border-radius: 8px;
+            padding: 12px 16px;
+            border-left: 4px solid #27ae60;
+        }
+        .project-box .title {
+            font-weight: 700;
+            color: #1a7a4a;
+            margin-bottom: 4px;
+        }
+        .project-box .content {
+            color: #555;
+            font-size: 0.92em;
+        }
+        
+        /* 技能树 */
+        .skill-tree {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin: 40px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+        .skill-tree h2 {
+            text-align: center;
+            margin-bottom: 25px;
+            color: #007396;
+            font-size: 1.8em;
+        }
+        .skill-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 12px;
+        }
+        .skill-item {
+            background: #f0f7ff;
+            padding: 12px 16px;
+            border-radius: 8px;
+            text-align: center;
+            font-weight: 500;
+            color: #2c3e50;
+            border: 1px solid #d6e9f8;
+            transition: all 0.2s;
+        }
+        .skill-item:hover {
+            background: #007396;
+            color: white;
+            border-color: #007396;
+            transform: scale(1.05);
+        }
+        .skill-item.level1 { border-left: 4px solid #e74c3c; }
+        .skill-item.level2 { border-left: 4px solid #e67e22; }
+        .skill-item.level3 { border-left: 4px solid #f1c40f; }
+        .skill-item.level4 { border-left: 4px solid #2ecc71; }
+        .skill-item.level5 { border-left: 4px solid #3498db; }
+        
+        /* 资源推荐 */
+        .resources {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin: 40px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .resources h2 {
+            text-align: center;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+        .resource-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 15px;
+        }
+        .resource-item {
+            background: rgba(255,255,255,0.15);
+            border-radius: 10px;
+            padding: 16px 20px;
+            backdrop-filter: blur(5px);
+        }
+        .resource-item h3 {
+            font-size: 1.05em;
+            margin-bottom: 6px;
+            color: #FFD700;
+        }
+        .resource-item p {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        /* 时间预估 */
+        .time-estimate {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 30px 0;
+            justify-content: center;
+        }
+        .time-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px 25px;
+            text-align: center;
+            flex: 1;
+            min-width: 140px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+        }
+        .time-card .num {
+            font-size: 2em;
+            font-weight: 800;
+            color: #007396;
+        }
+        .time-card .label {
+            color: #888;
+            font-size: 0.9em;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 30px;
+            color: #999;
+            font-size: 0.9em;
+        }
+        
+        @media (max-width: 768px) {
+            .header h1 { font-size: 2em; }
+            .phase { padding-left: 60px; }
+            .timeline::before { left: 20px; }
+            .phase-icon { left: 0; width: 36px; height: 36px; font-size: 1.1em; }
+            .topics { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <!-- Header -->
+    <div class="header">
+        <h1>☕ Java <span>学习路线图</span> 2025</h1>
+        <p>从零基础到高级架构师 · 完整学习路径</p>
+        <div class="subtitle">🔥 覆盖 Java 基础 → 并发编程 → Spring 全家桶 → 微服务 → 云原生 → AI 融合</div>
+    </div>
+
+    <!-- 时间预估 -->
+    <div class="time-estimate">
+        <div class="time-card">
+            <div class="num">1-2月</div>
+            <div class="label">L1 基础入门</div>
+        </div>
+        <div class="time-card">
+            <div class="num">2-3月</div>
+            <div class="label">L2 Web开发</div>
+        </div>
+        <div class="time-card">
+            <div class="num">3-4月</div>
+            <div class="label">L3 框架进阶</div>
+        </div>
+        <div class="time-card">
+            <div class="num">2-3月</div>
+            <div class="label">L4 中间件</div>
+        </div>
+        <div class="time-card">
+            <div class="num">3-4月</div>
+            <div class="label">L5 微服务</div>
+        </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="timeline">
+
+        <!-- Phase 1 -->
+        <div class="phase">
+            <div class="phase-icon">🌱</div>
+            <div class="phase-card">
+                <div class="phase-title">
+                    L1 · Java 核心基础
+                    <span class="phase-badge">入门</span>
+                </div>
+                <div class="phase-desc">掌握 Java 语法、面向对象思想、基础 API，建立编程思维</div>
+                <div class="topics">
+                    <div class="topic"><span class="label">📌 语法基础：</span><span class="items">数据类型、运算符、流程控制、数组</span></div>
+                    <div class="topic"><span class="label">📌 面向对象：</span><span class="items">类与对象、继承、多态、接口、抽象类</span></div>
+                    <div class="topic"><span class="label">📌 常用 API：</span><span class="items">String、集合框架(ArrayList/HashMap)、日期时间</span></div>
+                    <div class="topic highlight"><span class="label">🌟 新特性：</span><span class="items">Records、模式匹配、密封类、文本块</span></div>
+                    <div class="topic"><span class="label">📌 异常处理：</span><span class="items">try-catch、自定义异常、try-with-resources</span></div>
+                    <div class="topic"><span class="label">📌 工具链：</span><span class="items">JDK 21+、IntelliJ IDEA、Maven/Gradle</span></div>
+                </div>
+                <div class="project-box">
+                    <div class="title">🎯 阶段项目：双色球系统 / ATM 模拟系统</div>
+                    <div class="content">综合运用面向对象、集合、异常处理等知识，完成一个可交互的控制台应用</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 2 -->
+        <div class="phase">
+            <div class="phase-icon">🗄️</div>
+            <div class="phase-card">
+                <div class="phase-title">
+                    L2 · Java Web & 数据库
+                    <span class="phase-badge">基础</span>
+                </div>
+                <div class="phase-desc">掌握 Web 开发基础、数据库操作、前后端交互能力</div>
+                <div class="topics">
+                    <div class="topic"><span class="label">📌 数据库：</span><span class="items">MySQL、SQL 语句、JDBC、事务、索引</span></div>
+                    <div class="topic"><span class="label">📌 Web 基础：</span><span class="items">HTTP 协议、Servlet、JSP、Session/Cookie</span></div>
+                    <div class="topic"><span class="label">📌 前端基础：</span><span class="items">HTML5、CSS3、JavaScript、Ajax</span></div>
+                    <div class="topic"><span class="label">📌 前端框架：</span><span class="items">Vue 3 / React（选其一）</span></div>
+                    <div class="topic highlight"><span class="label">🌟 工具：</span><span class="items">Postman、Navicat、Git/GitHub</span></div>
+                </div>
+                <div class="project-box">
+                    <div class="title">🎯 阶段项目：博客系统 / 学生管理系统</div>
+                    <div class="content">前后端分离架构，实现用户注册登录、文章 CRUD、分页查询等功能</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 3 -->
+        <div class="phase">
+            <div class="phase-icon">⚙️</div>
+            <div class="phase-card">
+                <div class="phase-title">
+                    L3 · 主流框架
+                    <span class="phase-badge">进阶</span>
+                </div>
+                <div class="phase-desc">掌握 Spring 生态核心框架，具备企业级开发能力</div>
+                <div class="topics">
+                    <div class="topic highlight"><span class="label">🌟 Spring Boot 3.x：</span><span class="items">自动配置、Starter、Actuator、配置管理</span></div>
+                    <div class="topic"><span class="label">📌 Spring 核心：</span><span class="items">IoC 容器、DI 依赖注入、AOP 面向切面</span></div>
+                    <div class="topic"><span class="label">📌 持久层：</span><span class="items">MyBatis / MyBatis-Plus、JPA、Hibernate</span></div>
+                    <div class="topic"><span class="label">📌 安全框架：</span><span class="items">Spring Security、JWT、OAuth2</span></div>
+                    <div class="topic"><span class="label">📌 接口文档：</span><span class="items">Swagger / Knife4j、OpenAPI 3</span></div>
+                    <div class="topic"><span class="label">📌 单元测试：</span><span class="items">JUnit 5、Mockito、MockMvc</span></div>
+                </div>
+                <div class="project-box">
+                    <div class="title">🎯 阶段项目：苍穹外卖 / 电商后台管理系统</div>
+                    <div class="content">Spring Boot + MyBatis-Plus + Vue 3，实现完整的 RESTful API 和权限管理</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 4 -->
+        <div class="phase">
+            <div class="phase-icon">🚀</div>
+            <div class="phase-card">
+                <div class="phase-title">
+                    L4 · 并发编程 & JVM
+                    <span class="phase-badge">核心</span>
+                </div>
+                <div class="phase-desc">深入理解 Java 并发机制和 JVM 调优，是面试高频考点</div>
+                <div class="topics">
+                    <div class="topic highlight"><span class="label">🌟 并发编程：</span><span class="items">线程/线程池、synchronized、Lock、AQS、CAS</span></div>
+                    <div class="topic"><span class="label">📌 JUC 工具：</span><span class="items">ConcurrentHashMap、CountDownLatch、Semaphore</span></div>
+                    <div class="topic"><span class="label">📌 JVM 内存：</span><span class="items">堆/栈/方法区、GC 算法、垃圾回收器(G1/ZGC)</span></div>
+                    <div class="topic"><span class="label">📌 JVM 调优：</span><span class="items">堆内存设置、OOM 分析、JProfiler/Arthas</span></div>
+                    <div class="topic highlight"><span class="label">🌟 虚拟线程：</span><span class="items">JDK 21 Virtual Threads、结构化并发</span></div>
+                </div>
+                <div class="project-box">
+                    <div class="title">🎯 阶段项目：高性能文件下载器 / 即时通讯系统</div>
+                    <div class="content">利用多线程/虚拟线程实现高并发文件下载，结合 JVM 调优分析性能瓶颈</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 5 -->
+        <div class="phase">
+            <div class="phase-icon">🔗</div>
+            <div class="phase-card">
+                <div class="phase-title">
+                    L5 · 中间件 & 分布式
+                    <span class="phase-badge">高级</span>
+                </div>
+                <div class="phase-desc">掌握主流中间件，具备分布式系统设计与开发能力</div>
+                <div class="topics">
+                    <div class="topic highlight"><span class="label">🌟 Redis：</span><span class="items">缓存策略、分布式锁、持久化、集群、穿透/击穿/雪崩</span></div>
+                    <div class="topic"><span class="label">📌 消息队列：</span><span class="items">RabbitMQ / RocketMQ / Kafka（选一深入）</span></div>
+                    <div class="topic"><span class="label">📌 搜索引擎：</span><span class="items">Elasticsearch、Logstash、Kibana (ELK)</span></div>
+                    <div class="topic"><span class="label">📌 数据库进阶：</span><span class="items">MySQL 优化、读写分离、分库分表(ShardingSphere)</span></div>
+                    <div class="topic"><span class="label">📌 分布式理论：</span><span class="items">CAP、BASE、分布式事务(Seata)、一致性协议</span></div>
+                </div>
+                <div class="project-box">
+                    <div class="title">🎯 阶段项目：万信金融 / 好客租房</div>
+                    <div class="content">集成 Redis 缓存、消息队列解耦、ES 全文搜索，处理高并发场景</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 6 -->
+        <div class="phase">
+            <div class="phase-icon">☁️</div>
+            <div class="phase-card">
+                <div class="phase-title">
+                    L6 · 微服务 & 云原生
+                    <span class="phase-badge">架构</span>
+                </div>
+                <div class="phase-desc">掌握微服务架构设计与云原生部署，成为高级工程师</div>
+                <div class="topics">
+                    <div class="topic highlight"><span class="label">🌟 Spring Cloud：</span><span class="items">Nacos/Consul、Gateway、Feign、Sentinel、链路追踪</span></div>
+                    <div class="topic"><span class="label">📌 容器化：</span><span class="items">Docker、Docker Compose、镜像构建优化</span></div>
+                    <div class="topic"><span class="label">📌 容器编排：</span><span class="items">Kubernetes (K8s)、Pod/Service/Deployment、Helm</span></div>
+                    <div class="topic"><span class="label">📌 CI/CD：</span><span class="items">Jenkins / GitHub Actions、自动化构建与部署</span></div>
+                    <div class="topic"><span class="label">📌 监控告警：</span><span class="items">Prometheus + Grafana、ELK、SkyWalking</span></div>
+                </div>
+                <div class="project-box">
+                    <div class="title">🎯 阶段项目：学成在线 / 黑马头条</div>
+                    <div class="content">微服务架构拆分、服务注册发现、配置中心、网关统一入口、Docker+K8s 部署</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Phase 7 -->
+        <div class="phase">
+            <div class="phase-icon">🤖</div>
+            <div class="phase-card">
+                <div class="phase-title">
+                    L7 · AI 融合 & 架构进阶
+                    <span class="phase-badge">前沿</span>
+                </div>
+                <div class="phase-desc">拥抱 AI 时代，掌握大模型应用开发与系统架构设计</div>
+                <div class="topics">
+                    <div class="topic highlight"><span class="label">🌟 AI 大模型：</span><span class="items">OpenAI API、Spring AI、LangChain4j、Prompt Engineering</span></div>
+                    <div class="topic"><span class="label">📌 RAG 应用：</span><span class="items">向量数据库(Pinecone/Milvus)、Embedding、知识库</span></div>
+                    <div class="topic"><span class="label">📌 架构设计：</span><span class="items">设计模式、DDD 领域驱动设计、CQRS、事件驱动</span></div>
+                    <div class="topic"><span class="label">📌 性能优化：</span><span class="items">全链路压测、JVM 调优、SQL 优化、缓存策略</span></div>
+                    <div class="topic"><span class="label">📌 软技能：</span><span class="items">系统设计面试、技术方案撰写、Code Review</span></div>
+                </div>
+                <div class="project-box">
+                    <div class="title">🎯 阶段项目：AI 智能助手 / 智能客服系统</div>
+                    <div class="content">集成大模型 API + RAG 知识库 + 向量检索，构建 AI 驱动的智能应用</div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 技能树 -->
+    <div class="skill-tree">
+        <h2>🧩 Java 全栈技能树</h2>
+        <div class="skill-grid">
+            <div class="skill-item level1">Java 基础</div>
+            <div class="skill-item level1">面向对象</div>
+            <div class="skill-item level1">集合框架</div>
+            <div class="skill-item level1">IO 流</div>
+            <div class="skill-item level2">MySQL</div>
+            <div class="skill-item level2">JDBC</div>
+            <div class="skill-item level2">HTML/CSS/JS</div>
+            <div class="skill-item level2">Vue 3</div>
+            <div class="skill-item level3">Spring Boot</div>
+            <div class="skill-item level3">MyBatis-Plus</div>
+            <div class="skill-item level3">Spring Security</div>
+            <div class="skill-item level3">Git</div>
+            <div class="skill-item level4">并发编程</div>
+            <div class="skill-item level4">JVM 调优</div>
+            <div class="skill-item level4">Redis</div>
+            <div class="skill-item level4">RabbitMQ</div>
+            <div class="skill-item level4">Elasticsearch</div>
+            <div class="skill-item level5">Spring Cloud</div>
+            <div class="skill-item level5">Docker</div>
+            <div class="skill-item level5">Kubernetes</div>
+            <div class="skill-item level5">CI/CD</div>
+            <div class="skill-item level5">系统设计</div>
+            <div class="skill-item level5">AI 大模型</div>
+        </div>
+        <p style="text-align:center; margin-top:20px; color:#999; font-size:0.85em;">
+            🔴 L1 基础 · 🟠 L2 入门 · 🟡 L3 进阶 · 🟢 L4 高级 · 🔵 L5 架构
+        </p>
+    </div>
+
+    <!-- 资源推荐 -->
+    <div class="resources">
+        <h2>📚 推荐学习资源</h2>
+        <div class="resource-list">
+            <div class="resource-item">
+                <h3>📖 书籍</h3>
+                <p>《Java 核心技术》·《Effective Java》·《深入理解 Java 虚拟机》·《Java 并发编程的艺术》</p>
+            </div>
+            <div class="resource-item">
+                <h3>🎬 视频课程</h3>
+                <p>黑马程序员 · 尚硅谷 · B站韩顺平 · Spring Boot 官方教程</p>
+            </div>
+            <div class="resource-item">
+                <h3>🌐 在线练习</h3>
+                <p>LeetCode（算法）· 牛客网（面试题）· 力扣（中文）· CodeWars</p>
+            </div>
+            <div class="resource-item">
+                <h3>📄 官方文档</h3>
+                <p>Oracle Java Docs · Spring 官方文档 · MyBatis 官网 · Redis 官网</p>
+            </div>
+            <div class="resource-item">
+                <h3>🔧 开发工具</h3>
+                <p>IntelliJ IDEA · VS Code · Postman · Navicat · Docker Desktop · Git</p>
+            </div>
+            <div class="resource-item">
+                <h3>📝 面试准备</h3>
+                <p>JavaGuide · 面试鸭 · 小林 Coding · 大厂面经汇总</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 学习建议 -->
+    <div style="background:white; border-radius:12px; padding:30px; margin:40px 0; box-shadow:0 4px 15px rgba(0,0,0,0.08);">
+        <h2 style="text-align:center; color:#007396; margin-bottom:20px;">💡 学习建议</h2>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:20px;">
+            <div style="background:#f8f9fa; padding:18px; border-radius:10px;">
+                <strong style="color:#e74c3c;">1️⃣ 项目驱动</strong>
+                <p style="color:#666; margin-top:8px;">每学完一个阶段，必须做一个实战项目。代码量是衡量进步的最好标准。</p>
+            </div>
+            <div style="background:#f8f9fa; padding:18px; border-radius:10px;">
+                <strong style="color:#e67e22;">2️⃣ 源码阅读</strong>
+                <p style="color:#666; margin-top:8px;">进阶阶段要读 Spring、MyBatis 等框架源码，理解设计思想而非只会用。</p>
+            </div>
+            <div style="background:#f8f9fa; padding:18px; border-radius:10px;">
+                <strong style="color:#2ecc71;">3️⃣ 坚持刷题</strong>
+                <p style="color:#666; margin-top:8px;">每天 1-2 道 LeetCode，保持算法手感。面试手撕代码是必过环节。</p>
+            </div>
+            <div style="background:#f8f9fa; padding:18px; border-radius:10px;">
+                <strong style="color:#3498db;">4️⃣ 技术博客</strong>
+                <p style="color:#666; margin-top:8px;">写技术博客输出知识，费曼学习法是最好的学习方式。推荐掘金/CSDN。</p>
+            </div>
+            <div style="background:#f8f9fa; padding:18px; border-radius:10px;">
+                <strong style="color:#9b59b6;">5️⃣ 拥抱 AI</strong>
+                <p style="color:#666; margin-top:8px;">学会用 Copilot、ChatGPT 辅助编程，但不要依赖。理解原理比生成代码更重要。</p>
+            </div>
+            <div style="background:#f8f9fa; padding:18px; border-radius:10px;">
+                <strong style="color:#e74c3c;">6️⃣ 社区参与</strong>
+                <p style="color:#666; margin-top:8px;">参与 GitHub 开源项目、Stack Overflow 问答、技术社群讨论，拓展视野。</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>☕ Java 学习路线图 2025 版 · 持续更新中</p>
+        <p style="margin-top:5px;">路虽远，行则将至；事虽难，做则必成。💪</p>
+    </div>
+
+</div>
+</body>
+</html>

@@ -108,6 +108,24 @@ public class QuizVectorStoreConfig {
             log.info("✅ 所有向量已有 topic 字段，无需修复");
         }
 
+        // 🔴 [Hotfix-RAG联动] 删除 topic 元数据错误的旧向量（extractTopic 修复后，旧数据不匹配方向名）
+        //    旧数据的 topic 值为 "java-concurrency" 而非 "Java并发"，导致 topic 过滤失效
+        String topicList = String.join("','",
+                "Java基础与集合","Java并发","JVM","Spring框架","MySQL","Redis",
+                "消息队列","计算机网络","操作系统与Linux","分布式与微服务",
+                "算法与数据结构","设计模式","系统设计与场景","Docker与运维","ES与搜索","Agent与AI应用");
+        int wrongTopicCount = pgVectorJdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM vector_store WHERE metadata->>'topic' IS NOT NULL " +
+                "AND metadata->>'topic' NOT IN ('" + topicList + "')",
+                Integer.class);
+        if (wrongTopicCount > 0) {
+            int deleted = pgVectorJdbcTemplate.update(
+                    "DELETE FROM vector_store WHERE metadata->>'topic' IS NOT NULL " +
+                    "AND metadata->>'topic' NOT IN ('" + topicList + "')");
+            log.info("🔧 删除 {} 条 topic 元数据错误的旧向量（方向名不匹配标准列表），ETL 将重新嵌入",
+                    deleted);
+        }
+
         // 1. 获取已入库的文档文件名（通过 metadata 中的 filename 字段）
         //    注意：这个查询在旧向量删除之后执行，所以已删除文件的文件名不再出现
         List<String> existingFilenames = pgVectorJdbcTemplate.queryForList(
@@ -166,6 +184,18 @@ public class QuizVectorStoreConfig {
             }
             log.info("✅ 增量 ETL 完成，新增 {} 条向量（来自 {} 个文件）",
                     total, newOrUpdatedFiles.size());
+        }
+
+        // 🔴 [RAG优化] 创建 HNSW 索引加速向量检索（IVFFlat 需要训练，HNSW 无需训练且速度更快）
+        //    cosine_ops 与 PGVector 默认的 cosine 相似度计算一致
+        try {
+            pgVectorJdbcTemplate.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_vector_store_embedding " +
+                    "ON vector_store USING hnsw (embedding vector_cosine_ops)");
+            log.info("✅ HNSW 向量索引已就绪");
+        } catch (Exception e) {
+            // HNSW 可能在向量维度不一致时失败，但不会影响查询（只是慢一些）
+            log.warn("HNSW 索引创建失败（不影响使用，仅检索速度降低）: {}", e.getMessage());
         }
 
         return pgVectorStore;

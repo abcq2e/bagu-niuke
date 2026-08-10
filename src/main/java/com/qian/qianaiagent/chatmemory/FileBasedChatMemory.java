@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -33,6 +34,8 @@ public class FileBasedChatMemory implements ChatMemory {
 
     private final String baseDir;
     private final ObjectMapper objectMapper;
+    /** 🔴 文件级锁：防止并发 read-modify-write 导致数据丢失 */
+    private final Map<String, Object> fileLocks = new ConcurrentHashMap<>();
 
     public FileBasedChatMemory(String baseDir) {
         this.baseDir = baseDir;
@@ -48,30 +51,29 @@ public class FileBasedChatMemory implements ChatMemory {
     @Override
     public void add(String conversationId, List<Message> messages) {
         File file = getConversationFile(conversationId);
-        List<Message> existing;
-
-        if (file.exists()) {
-            existing = readFromFile(file);
-            if (existing == null) {
-                // 读取失败，保留原文件不覆盖
-                log.error("读取对话文件失败，跳过本次写入保护历史数据: {}", file.getPath());
-                return;
+        // 🔴 文件级锁：防止并发 read-modify-write 导致数据丢失
+        Object lock = fileLocks.computeIfAbsent(conversationId, k -> new Object());
+        synchronized (lock) {
+            List<Message> existing;
+            if (file.exists()) {
+                existing = readFromFile(file);
+                if (existing == null) {
+                    // 读取失败，保留原文件不覆盖
+                    log.error("读取对话文件失败，跳过本次写入保护历史数据: {}", file.getPath());
+                    return;
+                }
+            } else {
+                existing = new ArrayList<>();
             }
-        } else {
-            existing = new ArrayList<>();
+            existing.addAll(messages);
+            if (existing.size() > MAX_MESSAGES_PER_FILE) {
+                int removed = existing.size() - MAX_MESSAGES_PER_FILE;
+                existing = new ArrayList<>(existing.subList(removed, existing.size()));
+                log.warn("对话 {} 超过 {} 条消息，已截断，移除最早 {} 条",
+                        conversationId, MAX_MESSAGES_PER_FILE, removed);
+            }
+            writeToFile(file, existing);
         }
-
-        existing.addAll(messages);
-
-        // 🔴 容量保护：超过上限自动截断保留最近 N 条
-        if (existing.size() > MAX_MESSAGES_PER_FILE) {
-            int removed = existing.size() - MAX_MESSAGES_PER_FILE;
-            existing = new ArrayList<>(existing.subList(removed, existing.size()));
-            log.warn("对话 {} 超过 {} 条消息，已截断，移除最早 {} 条",
-                    conversationId, MAX_MESSAGES_PER_FILE, removed);
-        }
-
-        writeToFile(file, existing);
     }
 
     @Override
@@ -90,6 +92,23 @@ public class FileBasedChatMemory implements ChatMemory {
         if (file.exists()) {
             file.delete();
             log.info("已删除对话文件: {}", file.getName());
+        }
+    }
+
+    /**
+     * 覆盖写入会话消息（换方向裁剪用）。
+     */
+    public void replaceMessages(String conversationId, List<Message> messages) {
+        File file = getConversationFile(conversationId);
+        Object lock = fileLocks.computeIfAbsent(conversationId, k -> new Object());
+        synchronized (lock) {
+            List<Message> copy = messages != null ? new ArrayList<>(messages) : new ArrayList<>();
+            if (copy.size() > MAX_MESSAGES_PER_FILE) {
+                int removed = copy.size() - MAX_MESSAGES_PER_FILE;
+                copy = new ArrayList<>(copy.subList(removed, copy.size()));
+            }
+            writeToFile(file, copy);
+            log.info("对话 {} 已替换为 {} 条消息（裁剪/覆盖）", conversationId, copy.size());
         }
     }
 
@@ -134,8 +153,27 @@ public class FileBasedChatMemory implements ChatMemory {
                     int messageCount = messages.size();
                     return new ConversationInfo(chatId, title, lastModified, messageCount);
                 })
+                .filter(info -> !isTestConversation(info.title))
                 .sorted((a, b) -> Long.compare(b.lastModified, a.lastModified))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * 🔴 判断是否为测试对话（精确匹配，避免误删正常面试对话）
+     * 只过滤明确的测试特征，不使用模糊匹配
+     */
+    private boolean isTestConversation(String title) {
+        if (title == null || title.isBlank()) return false;
+        String trimmedTitle = title.trim();
+
+        // 🔴 精确匹配测试相关的完整句子（避免误删包含关键词的正常对话）
+        return trimmedTitle.equals("程序员鱼皮") ||
+               trimmedTitle.startsWith("程序员鱼皮，") ||
+               trimmedTitle.startsWith("你好，我是程序员鱼皮") ||
+               trimmedTitle.startsWith("我是程序员鱼皮") ||
+               trimmedTitle.equals("把我的学习计划保存为文件") ||
+               trimmedTitle.startsWith("请考察我对") && trimmedTitle.length() < 50 ||
+               trimmedTitle.startsWith("我想被考考");
     }
 
     /**
@@ -151,6 +189,8 @@ public class FileBasedChatMemory implements ChatMemory {
     private static final java.util.Set<String> NOISE_WORDS = java.util.Set.of(
             "继续", "下一个", "换一个", "不知道", "不会", "不记得", "忘了",
             "下一个问题", "可以", "好", "行", "嗯", "哦", "是的", "对"
+            // 🔴 移除测试相关关键词，避免误删正常面试对话
+            // 测试对话通过 isTestConversation() 方法精确过滤
     );
 
     private String extractTitle(List<Message> messages) {

@@ -1,2 +1,40 @@
-# 可以编写生产环境的配置，会覆盖 application.yml 配置
-# 注意提交时不要包含敏感信息（或者不要提交该文件）
+# ===== 生产环境配置 =====
+# 所有敏感信息通过环境变量注入，不要硬编码！
+
+spring:
+  # MySQL 数据库
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST:qian-mysql}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:qian_ai_agent}?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD}
+  data:
+    redis:
+      host: ${REDIS_HOST:qian-redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  neo4j:
+    uri: bolt://${NEO4J_HOST:qian-neo4j}:7687
+    authentication:
+      username: ${NEO4J_USER:neo4j}
+      password: ${NEO4J_PASSWORD}
+
+# PGVector 向量数据库
+pgvector:
+  datasource:
+    url: jdbc:postgresql://${PGVECTOR_HOST:qian-pgvector}:${PGVECTOR_PORT:5432}/${PGVECTOR_DATABASE:qian_ai_agent}
+    username: ${PGVECTOR_USER:postgres}
+    password: ${PGVECTOR_PASSWORD}
+
+# 日志级别（生产环境减少日志输出）
+logging:
+  level:
+    org.springframework.ai: INFO
+    com.qian.qianaiagent: INFO
+    root: WARN
+
+# Actuator 监控（生产环境限制暴露内容）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

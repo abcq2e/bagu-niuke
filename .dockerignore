@@ -1,0 +1,45 @@
+# Maven 构建产物
+target/
+*.jar
+*.war
+
+# Git
+.git/
+.gitignore
+
+# 环境变量（包含密钥，绝对不能进镜像）
+.env
+.env.*
+!.env.template
+!.env.production
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.settings/
+.project
+.classpath
+
+# 日志
+*.log
+logs/
+data/
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 文档
+docs/
+*.md
+!README.md
+
+# Node (前端目录有自己的 .dockerignore)
+node_modules/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db

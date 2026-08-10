@@ -140,22 +140,59 @@ public class MultiQuerySearchService {
     }
 
     /**
-     * 异步检索单个查询 —— 配合 {@code CompletableFuture.allOf()} 实现并行检索
+     * 🔴 [Hotfix-RAG联动] 带方向过滤的直接检索 —— 只召回当前方向的文档。
+     * <p>
+     * 同时按 category（"八股"/"面渣逆袭"）和 topic（"Java并发"）双重过滤。
      *
-     * <p>{@code @Async} 让 Spring 在异步线程池中执行，方法返回后 Spring 自动
-     * 包装为 {@link CompletableFuture}，无需手动 {@code supplyAsync}。
-     *
-     * @param query               单个查询文本
-     * @param numberOfQueries     变体数量
-     * @param topK                返回文档数
-     * @param similarityThreshold 相似度阈值
-     * @return 检索结果的 CompletableFuture
+     * @param query    检索关键词
+     * @param topK     返回文档数
+     * @param threshold 相似度阈值
+     * @param category 知识分类
+     * @param topic    方向名，为 null 或 "default" 时仅按 category 过滤
      */
-    @Async
-    public CompletableFuture<List<Document>> searchAsync(String query, int numberOfQueries,
-                                                          int topK, double similarityThreshold) {
-        return CompletableFuture.completedFuture(
-                multiQuerySearch(query, numberOfQueries, topK, similarityThreshold));
+    public List<Document> directSearchWithTopic(String query, int topK,
+                                                 double threshold, String category, String topic) {
+        FilterExpressionBuilder builder = new FilterExpressionBuilder();
+        Filter.Expression filter;
+        if (topic != null && !topic.isBlank() && !"default".equals(topic)) {
+            filter = builder.and(
+                    builder.eq("category", category),
+                    builder.eq("topic", topic)
+            ).build();
+        } else {
+            filter = builder.eq("category", category).build();
+        }
+        return quizVectorStore.similaritySearch(
+                SearchRequest.builder()
+                        .query(query)
+                        .topK(topK)
+                        .similarityThreshold(threshold)
+                        .filterExpression(filter)
+                        .build());
     }
 
+    /**
+     * 直接单次向量检索 —— 不调 LLM，适合面试场景（query 已是技术关键词）
+     *
+     * <p>面试场景的 ragQuery 本身就是精准的技术术语（如"Redis 分布式锁"），
+     * 向量空间内语义已足够，无需 LLM 重写/扩展，省去 2-4s 的 LLM 等待。
+     *
+     * @param query               检索关键词
+     * @param topK                返回文档数
+     * @param similarityThreshold 相似度阈值
+     * @param category            知识分类（"八股"/"面渣逆袭"）
+     */
+    public List<Document> directSearch(String query, int topK,
+                                       double similarityThreshold, String category) {
+        Filter.Expression filter = new FilterExpressionBuilder()
+                .eq("category", category)
+                .build();
+        return quizVectorStore.similaritySearch(
+                SearchRequest.builder()
+                        .query(query)
+                        .topK(topK)
+                        .similarityThreshold(similarityThreshold)
+                        .filterExpression(filter)
+                        .build());
+    }
 }
