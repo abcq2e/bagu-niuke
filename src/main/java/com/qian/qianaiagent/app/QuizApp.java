@@ -534,7 +534,7 @@ public class QuizApp {
                         // 🔴 [Bug修复] evalSameAsNew：AI失败恢复后同题双展，跳过评分
                         if (!isFirstMessage && !evalSameAsNew && !isNextCmd && !isSkipDir && !isResetMemory) {
                             userAbilityService.scoreAnswerAsync(
-                                    chatId, effectiveEvalTopic, null, effectiveEvalStem, message);
+                                    chatId, effectiveEvalTopic, null, effectiveEvalStem, message, userId);
                         }
                         String aiText = fullTextBuilder.toString();
                         if (!aiText.isEmpty()) {

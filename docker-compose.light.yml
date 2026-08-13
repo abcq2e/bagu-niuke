@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  qian-pgvector:
+    image: pgvector/pgvector:pg16
+    container_name: qian-pgvector
+    environment:
+      POSTGRES_USER: ${PGVECTOR_USER:-postgres}
+      POSTGRES_PASSWORD: ${PGVECTOR_PASSWORD}
+      POSTGRES_DB: ${PGVECTOR_DATABASE:-qian_ai_agent}
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - qian-net
+
+  qian-neo4j:
+    image: neo4j:5
+    container_name: qian-neo4j
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD}
+    volumes:
+      - neo4j_data:/data
+    restart: unless-stopped
+    networks:
+      - qian-net
+
+  qian-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qian-backend
+    ports:
+      - "8123:8123"
+    environment:
+      - MYSQL_HOST=${MYSQL_HOST:-mysql}
+      - MYSQL_PORT=${MYSQL_PORT:-3306}
+      - MYSQL_USER=root
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-qian_ai_agent}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - NEO4J_HOST=qian-neo4j
+      - NEO4J_USER=${NEO4J_USER:-neo4j}
+      - NEO4J_PASSWORD=${NEO4J_PASSWORD}
+      - PGVECTOR_HOST=qian-pgvector
+      - PGVECTOR_PORT=5432
+      - PGVECTOR_USER=${PGVECTOR_USER:-postgres}
+      - PGVECTOR_PASSWORD=${PGVECTOR_PASSWORD}
+      - PGVECTOR_DATABASE=${PGVECTOR_DATABASE:-qian_ai_agent}
+      - SPRING_AI_OPENAI_API_KEY=${SPRING_AI_OPENAI_API_KEY}
+      - SPRING_AI_OPENAI_BASE_URL=${SPRING_AI_OPENAI_BASE_URL:-https://api.deepseek.com}
+      - SPRING_AI_DASHSCOPE_API_KEY=${SPRING_AI_DASHSCOPE_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - SEARCH_API_API_KEY=${SEARCH_API_API_KEY}
+    volumes:
+      - ./.quiz-cursor:/app/.quiz-cursor
+      - ./.ability-profiles:/app/.ability-profiles
+      - ./data/chat-memory:/app/data/chat-memory
+    restart: unless-stopped
+    networks:
+      - qian-net
+
+  qian-frontend:
+    build:
+      context: ./qian-ai-agent-frontend
+      dockerfile: Dockerfile
+    container_name: qian-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - qian-backend
+    restart: unless-stopped
+    networks:
+      - qian-net
+
+volumes:
+  pgvector_data:
+  neo4j_data:
+
+networks:
+  qian-net:
+    external: true

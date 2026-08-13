@@ -121,6 +121,11 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       # Tavily 搜索
       - SEARCH_API_API_KEY=${SEARCH_API_API_KEY}
+    volumes:
+      # 🔴 持久化面试进度：游标 / 能力画像 / 对话记忆，容器重建后不丢失
+      - ./.quiz-cursor:/app/.quiz-cursor
+      - ./.ability-profiles:/app/.ability-profiles
+      - ./data/chat-memory:/app/data/chat-memory
     depends_on:
       qian-mysql:
         condition: service_healthy

@@ -144,7 +144,7 @@ public class WrongQuestionReviewService {
                             if (scoreNow) {
                                 userAbilityService.scoreAnswerReviewAsync(
                                         sourceChatId, eval.topic(), eval.questionText(), message,
-                                        eval.knowledgePoint());
+                                        eval.knowledgePoint(), userId);
                             }
                             if (advanceNow) {
                                 previousStemMap.put(chatId, stemSnapshot);

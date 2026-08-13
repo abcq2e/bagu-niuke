@@ -215,21 +215,24 @@ public class UserAbilityService {
      * 确保登录用户切换对话/刷新页面后画像不丢失。
      */
     public UserAbilityProfile getOrCreateProfile(String chatId, Long userId) {
+        // 🔴 [多窗口同步] 登录态画像主 key 与游标对齐（user_X），未登录回退 chatId
+        String key = resolveKey(chatId, userId);
+
         // 🔴 每次加载都重新执行跨方向清理（消除历史脏数据）
-        UserAbilityProfile cached = localCache.get(chatId);
+        UserAbilityProfile cached = localCache.get(key);
         if (cached != null) {
             // 🔴 [503修复] 缓存命中时异步执行清理，避免阻塞请求线程等待 AI 调用
             // 当 DeepSeek 503 时，同步清理会导致接口超时/卡死
-            // 节流：同一会话60秒内只提交一次清理任务
-            Long lastCleanup = lastCleanupTime.get(chatId);
+            // 节流：同一 key 60秒内只提交一次清理任务
+            Long lastCleanup = lastCleanupTime.get(key);
             long now = System.currentTimeMillis();
             if (lastCleanup == null || (now - lastCleanup) > CLEANUP_THROTTLE_MS) {
-                lastCleanupTime.put(chatId, now);
-                final String finalChatId = chatId;
+                lastCleanupTime.put(key, now);
+                final String finalKey = key;
                 scoringExecutor.execute(() -> {
                     try {
                         int moved = cleanCrossTopicWeakPoints(cached);
-                        if (moved > 0) saveToFile(finalChatId, cached);
+                        if (moved > 0) saveToFile(finalKey, cached);
                     } catch (Exception e) {
                         log.warn("异步跨方向清理失败: {}", e.getMessage());
                     }
@@ -237,48 +240,39 @@ public class UserAbilityService {
             }
             return cached;
         }
-        // 缓存未命中：从文件/Redis加载
-        UserAbilityProfile loaded = loadFromFile(chatId);
+        // 缓存未命中：从主 key 文件加载
+        UserAbilityProfile loaded = loadFromFile(key);
         if (loaded != null) {
-            log.info("📂 从文件恢复能力画像: chatId={}", chatId);
+            log.info("📂 从文件恢复能力画像: key={}", key);
             rebuildFreq(loaded);
             cleanCrossTopicWeakPoints(loaded);
-            localCache.put(chatId, loaded);
+            localCache.put(key, loaded);
             return loaded;
         }
-        if (userId != null) {
-            UserAbilityProfile fromUserFile = loadFromUserFile(userId);
-            if (fromUserFile != null) {
-                log.info("📂 从用户文件恢复能力画像: userId={}", userId);
-                rebuildFreq(fromUserFile);
-                cleanCrossTopicWeakPoints(fromUserFile);
-                localCache.put(chatId, fromUserFile);
-                saveToFile(chatId, fromUserFile);
-                return fromUserFile;
-            }
-            UserAbilityProfile fromUserRedis = loadFromUserRedis(userId);
-            if (fromUserRedis != null) {
-                log.info("📂 从用户 Redis 恢复能力画像: userId={}", userId);
-                rebuildFreq(fromUserRedis);
-                cleanCrossTopicWeakPoints(fromUserRedis);
-                localCache.put(chatId, fromUserRedis);
-                saveToFile(chatId, fromUserRedis);
-                saveToUserFile(userId, fromUserRedis);
-                return fromUserRedis;
+        // 🔴 [多窗口同步] 登录态主 key（user_X）未命中时，从旧 chatId 画像迁移历史进度
+        if (!key.equals(chatId)) {
+            UserAbilityProfile fromChat = loadFromFile(chatId);
+            if (fromChat != null) {
+                log.info("📂 从旧 chatId 画像迁移到用户画像: {} → {}", chatId, key);
+                rebuildFreq(fromChat);
+                cleanCrossTopicWeakPoints(fromChat);
+                localCache.put(key, fromChat);
+                saveToFile(key, fromChat);
+                return fromChat;
             }
         }
-        UserAbilityProfile fromRedis = loadFromRedis(chatId);
+        UserAbilityProfile fromRedis = loadFromRedis(key);
         if (fromRedis != null) {
-            log.info("📂 从 Redis 恢复能力画像: chatId={}", chatId);
+            log.info("📂 从 Redis 恢复能力画像: key={}", key);
             rebuildFreq(fromRedis);
             cleanCrossTopicWeakPoints(fromRedis);
-            localCache.put(chatId, fromRedis);
-            saveToFile(chatId, fromRedis);
+            localCache.put(key, fromRedis);
+            saveToFile(key, fromRedis);
             return fromRedis;
         }
-        log.info("📂 未找到画像文件，创建新画像: chatId={}", chatId);
-        UserAbilityProfile newProfile = new UserAbilityProfile(chatId);
-        localCache.put(chatId, newProfile);
+        log.info("📂 未找到画像文件，创建新画像: key={}, chatId={}", key, chatId);
+        UserAbilityProfile newProfile = new UserAbilityProfile(key);
+        localCache.put(key, newProfile);
         return newProfile;
     }
 
@@ -293,15 +287,12 @@ public class UserAbilityService {
      * 保存画像（文件 + Redis 双写），同时按 userId 冗余保存
      */
     public void saveProfile(String chatId, Long userId) {
-        UserAbilityProfile profile = localCache.get(chatId);
+        // 🔴 [多窗口同步] 登录态主 key 已是 user_X，直接按主 key 写，无需再冗余一份 user 文件
+        String key = resolveKey(chatId, userId);
+        UserAbilityProfile profile = localCache.get(key);
         if (profile == null) return;
-        saveToFile(chatId, profile);
-        saveToRedis(chatId, profile);
-        // 按 userId 冗余保存，确保 chatId 变了也能恢复
-        if (userId != null) {
-            saveToUserFile(userId, profile);
-            saveToUserRedis(userId, profile);
-        }
+        saveToFile(key, profile);
+        saveToRedis(key, profile);
     }
 
     private void rebuildFreq(UserAbilityProfile profile) {
@@ -338,6 +329,14 @@ public class UserAbilityService {
             wq.remove(key);
             log.info("🧹 去重错题: {}", key);
         }
+    }
+
+    /**
+     * 🔴 [多窗口同步] 画像存储主 key，与游标 {@code SequentialRotationService.cursorKey} 对齐。
+     * 登录态用 user_X（跨 chatId/窗口/设备统一），未登录回退 chatId。
+     */
+    private String resolveKey(String chatId, Long userId) {
+        return (userId != null && userId > 0) ? "user_" + userId : chatId;
     }
 
     // ===== 文件持久化 =====
@@ -991,7 +990,7 @@ public class UserAbilityService {
      * @param answer   用户的回答
      */
     public CompletableFuture<Void> scoreAnswerAsync(String chatId, String topic, String dimension,
-                                                      String question, String answer) {
+                                                      String question, String answer, Long userId) {
         return CompletableFuture.runAsync(() -> {
             try {
                 long start = System.currentTimeMillis();
@@ -1004,7 +1003,7 @@ public class UserAbilityService {
                 if (result != null && !result.isBlank()) {
                     UserAbilityProfile.ScoreResult sr = parseScoreResult(result, topic);
                     if (sr != null) {
-                        UserAbilityProfile profile = getOrCreateProfile(chatId);
+                        UserAbilityProfile profile = getOrCreateProfile(chatId, userId);
 
                         // 🔴 [诊断] 记录评分入参
                         log.info("📊 [评分入参] topic={}, question={}, rawWeakPoints={}",
@@ -1068,7 +1067,7 @@ public class UserAbilityService {
                             }
                         }
 
-                        saveProfile(chatId);
+                        saveProfile(chatId, userId);
 
                         UserAbilityProfile.TopicScore ts = profile.getTopicScores().get(topic);
                         String level = ts != null ? ts.getScoreLevel() : "?";
@@ -1110,17 +1109,24 @@ public class UserAbilityService {
     }
 
     /**
-     * 🔴 [终版] 向后兼容：无 dimension 的重载。
+     * 🔴 [终版] 向后兼容：无 dimension 的重载（无 userId，未登录按 chatId 记录）。
      */
     public CompletableFuture<Void> scoreAnswerAsync(String chatId, String topic, String question, String answer) {
-        return scoreAnswerAsync(chatId, topic, null, question, answer);
+        return scoreAnswerAsync(chatId, topic, null, question, answer, null);
     }
 
     /**
      * 兼容旧签名评分（无 topic 参数时使用）
      */
     public CompletableFuture<Void> scoreAnswerAsync(String chatId, String question, String answer) {
-        return scoreAnswerAsync(chatId, "", null, question, answer);
+        return scoreAnswerAsync(chatId, "", null, question, answer, null);
+    }
+
+    /**
+     * 向后兼容：带 dimension 无 userId 的重载。
+     */
+    public CompletableFuture<Void> scoreAnswerAsync(String chatId, String topic, String dimension, String question, String answer) {
+        return scoreAnswerAsync(chatId, topic, dimension, question, answer, null);
     }
 
     /**
@@ -1128,12 +1134,18 @@ public class UserAbilityService {
      */
     public CompletableFuture<Void> scoreAnswerReviewAsync(String chatId, String topic,
                                                             String question, String answer) {
-        return scoreAnswerReviewAsync(chatId, topic, question, answer, null);
+        return scoreAnswerReviewAsync(chatId, topic, question, answer, null, null);
     }
 
     public CompletableFuture<Void> scoreAnswerReviewAsync(String chatId, String topic,
                                                             String question, String answer,
                                                             String knowledgePoint) {
+        return scoreAnswerReviewAsync(chatId, topic, question, answer, knowledgePoint, null);
+    }
+
+    public CompletableFuture<Void> scoreAnswerReviewAsync(String chatId, String topic,
+                                                            String question, String answer,
+                                                            String knowledgePoint, Long userId) {
         return CompletableFuture.runAsync(() -> {
             try {
                 long start = System.currentTimeMillis();
@@ -1145,7 +1157,7 @@ public class UserAbilityService {
                 if (result != null && !result.isBlank()) {
                     UserAbilityProfile.ScoreResult sr = parseScoreResult(result, topic);
                     if (sr != null && sr.getScore() >= 4) {
-                        UserAbilityProfile profile = getOrCreateProfile(chatId);
+                        UserAbilityProfile profile = getOrCreateProfile(chatId, userId);
                         UserAbilityProfile.TopicScore ts = profile.getTopicScores().get(topic);
                         if (ts != null) {
                             boolean removed = false;
@@ -1155,7 +1167,7 @@ public class UserAbilityService {
                             }
                             removed = ts.removeWrongQuestionByText(question) || removed;
                             if (removed) {
-                                saveProfile(chatId);
+                                saveProfile(chatId, userId);
                                 log.info("✅ 复习答对，移除错题: chatId={}, topic={}, score={}/5, q={}, 耗时={}ms",
                                         chatId, topic, sr.getScore(),
                                         question != null && question.length() > 40
@@ -1359,15 +1371,11 @@ public class UserAbilityService {
      * 重置指定会话的能力画像（同时清理 userId 冗余存储）
      */
     public void resetProfile(String chatId, Long userId) {
-        localCache.remove(chatId);
-        deleteProfileFile(chatId);
-        deleteFromRedis(chatId);
-        // 同时清理 userId 级别的冗余存储，避免重置后又从 userId 恢复
-        if (userId != null) {
-            deleteUserProfileFile(userId);
-            deleteFromUserRedis(userId);
-            log.info("🔄 重置用户画像冗余存储: userId={}", userId);
-        }
-        log.info("🔄 重置能力画像: chatId={}", chatId);
+        // 🔴 [多窗口同步] 登录态主 key 已是 user_X，直接删主 key 文件即可
+        String key = resolveKey(chatId, userId);
+        localCache.remove(key);
+        deleteProfileFile(key);
+        deleteFromRedis(key);
+        log.info("🔄 重置能力画像: key={}, chatId={}", key, chatId);
     }
 }
