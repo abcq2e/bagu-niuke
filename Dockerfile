@@ -4,6 +4,8 @@ WORKDIR /app
 
 # 先复制 pom.xml，利用 Docker 缓存层加速构建
 COPY pom.xml .
+# 创建 toolchains.xml，满足 maven-toolchains-plugin 的要求
+RUN mkdir -p /root/.m2 && echo '<?xml version="1.0" encoding="UTF-8"?><toolchains><toolchain><type>jdk</type><provides><version>21</version></provides><configuration><jdkHome>/usr/lib/jvm/java-21-amazon-corretto</jdkHome></configuration></toolchain></toolchains>' > /root/.m2/toolchains.xml
 RUN mvn dependency:go-offline -B
 
 # 再复制源码并打包

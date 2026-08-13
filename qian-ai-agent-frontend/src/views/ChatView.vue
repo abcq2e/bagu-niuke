@@ -403,7 +403,9 @@ const isErrorMessage = (content) => {
 // localStorage 持久化 chatId
 const STORAGE_KEY = 'yu_ai_agent_current_chat_id'
 const savedChatId = localStorage.getItem(STORAGE_KEY)
-const chatId = ref(savedChatId || ('chat_' + crypto.randomUUID()))
+// 🔴 crypto.randomUUID() 仅 HTTPS/localhost 可用，HTTP 需 polyfill
+const fallbackUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16) })
+const chatId = ref(savedChatId || ('chat_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : fallbackUUID())))
 const persistChatId = () => localStorage.setItem(STORAGE_KEY, chatId.value)
 watch(chatId, persistChatId)
 
