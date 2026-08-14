@@ -122,10 +122,11 @@ services:
       # Tavily 搜索
       - SEARCH_API_API_KEY=${SEARCH_API_API_KEY}
     volumes:
-      # 🔴 持久化面试进度：游标 / 能力画像 / 对话记忆，容器重建后不丢失
-      - ./.quiz-cursor:/app/.quiz-cursor
-      - ./.ability-profiles:/app/.ability-profiles
-      - ./data/chat-memory:/app/data/chat-memory
+      # 🔴 持久化面试/复习进度：游标 / 能力画像 / 对话记忆（named volume，非 root 用户可写，容器重建不丢失）
+      - quiz_cursor:/app/.quiz-cursor
+      - ability_profiles:/app/.ability-profiles
+      - review_cursor:/app/.review-cursor
+      - chat_memory:/app/data/chat-memory
     depends_on:
       qian-mysql:
         condition: service_healthy
@@ -159,6 +160,10 @@ volumes:
   neo4j_logs:
   mysql_data:
   redis_data:
+  quiz_cursor:
+  ability_profiles:
+  review_cursor:
+  chat_memory:
 
 networks:
   qian-net:
