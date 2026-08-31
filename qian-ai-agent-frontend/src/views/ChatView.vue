@@ -726,7 +726,7 @@ const loadConversations = async () => {
       if (msgs.length > 0 && !serverList.find(c => c.chatId === id)) {
         serverList.unshift({
           chatId: id,
-          title: extractConversationTitle(msgs),
+          title: '对话',
           lastModified: msgs[msgs.length - 1].time,
           messageCount: msgs.length
         })
@@ -758,10 +758,9 @@ const newChat = () => {
   saveCurrentToCache()
   const currentId = chatId.value
   if (messages.value.length > 0 && !conversations.value.find(c => c.chatId === currentId)) {
-    const title = extractConversationTitle(messages.value)
     conversations.value.unshift({
       chatId: currentId,
-      title,
+      title: '对话',
       lastModified: Date.now(),
       messageCount: messages.value.length
     })
@@ -776,19 +775,10 @@ const newChat = () => {
   messageCache[newId] = []
   conversations.value.unshift({
     chatId: newId,
-    title: '新对话',
+    title: '对话',
     lastModified: Date.now(),
     messageCount: 0
   })
-}
-
-const extractConversationTitle = (msgs) => {
-  const firstUser = msgs.find(m => m.isUser)
-  if (firstUser) {
-    const t = firstUser.content
-    return t.length > 30 ? t.substring(0, 30) + '…' : t
-  }
-  return '对话'
 }
 
 const removeConversation = async (id) => {
@@ -902,12 +892,6 @@ const updateConversationInfo = () => {
   if (idx >= 0) {
     conversations.value[idx].messageCount = messages.value.length
     conversations.value[idx].lastModified = Date.now()
-    if (messages.value.length > 0) {
-      const firstText = messages.value[0].content.replace(/\s+/g, '').slice(0, 20)
-      if (firstText) {
-        conversations.value[idx].title = firstText
-      }
-    }
   }
 }
 const scheduleCacheWrite = () => {
@@ -992,28 +976,11 @@ const send = () => {
     return
   }
 
-  const isFirstMsg = messages.value.length === 0
   const userMsg = createMessage(text, true)
   messages.value.push(userMsg)
   scrollDown()
   // 🔴 立即更新侧边栏计数（不等防抖），确保用户消息发出后计数即时刷新
   updateConversationInfo()
-  if (isFirstMsg) {
-    const title = text.length > 30 ? text.substring(0, 30) + '…' : text
-    const existing = conversations.value.find(c => c.chatId === chatId.value)
-    if (existing) {
-      existing.title = title
-      existing.messageCount = messages.value.length
-      existing.lastModified = Date.now()
-    } else {
-      conversations.value.unshift({
-        chatId: chatId.value,
-        title,
-        lastModified: Date.now(),
-        messageCount: messages.value.length
-      })
-    }
-  }
   cacheMessages(chatId.value, [...messages.value])
   if (eventSource) eventSource.close()
   connecting.value = true
