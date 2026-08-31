@@ -146,34 +146,15 @@ public class FileBasedChatMemory implements ChatMemory {
                     String chatId = file.getName().replace(".json", "");
                     List<Message> messages = readFromFile(file);
                     if (messages == null) messages = new ArrayList<>();
-                    // 🔴 优先用自定义标题
+                    // 🔴 优先用自定义标题，否则固定为「对话」
                     String customTitle = getCustomTitle(chatId);
-                    String title = customTitle != null ? customTitle : extractTitle(messages);
+                    String title = customTitle != null ? customTitle : "对话";
                     long lastModified = file.lastModified();
                     int messageCount = messages.size();
                     return new ConversationInfo(chatId, title, lastModified, messageCount);
                 })
-                .filter(info -> !isTestConversation(info.title))
                 .sorted((a, b) -> Long.compare(b.lastModified, a.lastModified))
                 .collect(Collectors.toList());
-    }
-
-    /**
-     * 🔴 判断是否为测试对话（精确匹配，避免误删正常面试对话）
-     * 只过滤明确的测试特征，不使用模糊匹配
-     */
-    private boolean isTestConversation(String title) {
-        if (title == null || title.isBlank()) return false;
-        String trimmedTitle = title.trim();
-
-        // 🔴 精确匹配测试相关的完整句子（避免误删包含关键词的正常对话）
-        return trimmedTitle.equals("程序员鱼皮") ||
-               trimmedTitle.startsWith("程序员鱼皮，") ||
-               trimmedTitle.startsWith("你好，我是程序员鱼皮") ||
-               trimmedTitle.startsWith("我是程序员鱼皮") ||
-               trimmedTitle.equals("把我的学习计划保存为文件") ||
-               trimmedTitle.startsWith("请考察我对") && trimmedTitle.length() < 50 ||
-               trimmedTitle.startsWith("我想被考考");
     }
 
     /**
@@ -184,42 +165,6 @@ public class FileBasedChatMemory implements ChatMemory {
     }
 
     // ===== 内部方法 =====
-
-    /** 标题噪音词 —— 这些开头的消息不配当标题 */
-    private static final java.util.Set<String> NOISE_WORDS = java.util.Set.of(
-            "继续", "下一个", "换一个", "不知道", "不会", "不记得", "忘了",
-            "下一个问题", "可以", "好", "行", "嗯", "哦", "是的", "对"
-            // 🔴 移除测试相关关键词，避免误删正常面试对话
-            // 测试对话通过 isTestConversation() 方法精确过滤
-    );
-
-    private String extractTitle(List<Message> messages) {
-        if (messages.isEmpty()) return "空对话";
-        // 🔴 优先取第一条非噪音的有效用户消息当标题
-        for (Message msg : messages) {
-            if ("USER".equals(msg.getMessageType().name())) {
-                String text = msg.getText();
-                if (text != null && !text.isBlank()) {
-                    String trimmed = text.trim();
-                    // 跳过噪音词
-                    if (NOISE_WORDS.contains(trimmed) || trimmed.length() < 4) {
-                        continue;
-                    }
-                    return trimmed.length() > 30 ? trimmed.substring(0, 30) + "…" : trimmed;
-                }
-            }
-        }
-        // 全是噪音 → 用第一条用户消息兜底
-        for (Message msg : messages) {
-            if ("USER".equals(msg.getMessageType().name())) {
-                String text = msg.getText();
-                if (text != null && !text.isBlank()) {
-                    return "对话 " + text.trim();
-                }
-            }
-        }
-        return "对话 " + messages.size() + " 条消息";
-    }
 
     /**
      * 更新对话标题（存到旁路元数据文件）
@@ -235,7 +180,7 @@ public class FileBasedChatMemory implements ChatMemory {
     }
 
     /**
-     * 读取自定义标题（优先于 extractTitle 使用）
+     * 读取用户手动设置的自定义标题
      */
     public String getCustomTitle(String conversationId) {
         File titleFile = new File(baseDir, conversationId + ".title");
