@@ -1,6 +1,6 @@
 package com.qian.qianaiagent.tools;
 
-import com.qian.qianaiagent.rag.MultiQuerySearchService;
+import com.qian.qianaiagent.rag.retrieval.MultiQuerySearchService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.tool.annotation.Tool;

@@ -2,11 +2,11 @@ package com.qian.qianaiagent.controller;
 
 import com.qian.qianaiagent.agent.YuManus;
 import com.qian.qianaiagent.annotation.RateLimit;
-import com.qian.qianaiagent.app.QuizApp;
-import com.qian.qianaiagent.app.UserAbilityProfile;
-import com.qian.qianaiagent.app.UserAbilityService;
-import com.qian.qianaiagent.app.WrongQuestionReviewService;
-import com.qian.qianaiagent.chatmemory.FileBasedChatMemory;
+import com.qian.qianaiagent.interview.QuizApp;
+import com.qian.qianaiagent.ability.UserAbilityProfile;
+import com.qian.qianaiagent.ability.UserAbilityService;
+import com.qian.qianaiagent.interview.review.WrongQuestionReviewService;
+import com.qian.qianaiagent.memory.FileBasedChatMemory;
 import com.qian.qianaiagent.context.UserContext;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -32,6 +32,7 @@ import java.util.concurrent.Executor;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import com.qian.qianaiagent.memory.SummarizingChatMemory;
 
 /**
  * AI 对话控制器
@@ -178,7 +179,7 @@ public class AiController {
      *   <li>完成后将本轮新消息持久化到文件</li>
      * </ol>
      * <p>
-     * 窗口策略：{@link com.qian.qianaiagent.chatmemory.SummarizingChatMemory}
+     * 窗口策略：{@link com.qian.qianaiagent.memory.SummarizingChatMemory}
      * 保留最近 40 条消息（约 20 轮），超出部分自动调用 LLM 压缩为摘要。
      *
      * @param message 用户消息

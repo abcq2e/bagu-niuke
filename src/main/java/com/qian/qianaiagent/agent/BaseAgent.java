@@ -22,6 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import com.qian.qianaiagent.interview.QuizApp;
 
 /**
  * 抽象基础代理类，用于管理代理状态和执行流程。

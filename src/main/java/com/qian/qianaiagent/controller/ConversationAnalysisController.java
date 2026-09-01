@@ -1,6 +1,6 @@
 package com.qian.qianaiagent.controller;
 
-import com.qian.qianaiagent.neo4j.service.ConversationAnalysisService;
+import com.qian.qianaiagent.graph.service.ConversationAnalysisService;
 import lombok.extern.slf4j.Slf4j;
 import org.neo4j.driver.Driver;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;

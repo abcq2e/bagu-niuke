@@ -4,8 +4,10 @@ WORKDIR /app
 
 # 先复制 pom.xml，利用 Docker 缓存层加速构建
 COPY pom.xml .
-# 创建 toolchains.xml，满足 maven-toolchains-plugin 的要求
-RUN mkdir -p /root/.m2 && echo '<?xml version="1.0" encoding="UTF-8"?><toolchains><toolchain><type>jdk</type><provides><version>21</version></provides><configuration><jdkHome>/usr/lib/jvm/java-21-amazon-corretto</jdkHome></configuration></toolchain></toolchains>' > /root/.m2/toolchains.xml
+# 创建 toolchains.xml + settings.xml（阿里云 Maven 镜像，解决服务器连不上国外 Maven 仓库的问题）
+RUN mkdir -p /root/.m2 \
+    && echo '<?xml version="1.0" encoding="UTF-8"?><toolchains><toolchain><type>jdk</type><provides><version>21</version></provides><configuration><jdkHome>/usr/lib/jvm/java-21-amazon-corretto</jdkHome></configuration></toolchain></toolchains>' > /root/.m2/toolchains.xml \
+    && echo '<?xml version="1.0" encoding="UTF-8"?><settings><mirrors><mirror><id>aliyun</id><name>aliyun</name><mirrorOf>*</mirrorOf><url>https://maven.aliyun.com/repository/public</url></mirror></mirrors></settings>' > /root/.m2/settings.xml
 RUN mvn dependency:go-offline -B
 
 # 再复制源码并打包

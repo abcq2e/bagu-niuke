@@ -1,8 +1,8 @@
 package com.qian.qianaiagent.config;
 
-import com.qian.qianaiagent.chatmemory.ConversationSummarizer;
-import com.qian.qianaiagent.chatmemory.FileBasedChatMemory;
-import com.qian.qianaiagent.chatmemory.SummarizingChatMemory;
+import com.qian.qianaiagent.memory.ConversationSummarizer;
+import com.qian.qianaiagent.memory.FileBasedChatMemory;
+import com.qian.qianaiagent.memory.SummarizingChatMemory;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
