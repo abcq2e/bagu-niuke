@@ -1,11 +1,12 @@
 package com.qian.qianaiagent.tools;
 
-import com.qian.qianaiagent.rag.MultiQuerySearchService;
+import com.qian.qianaiagent.rag.retrieval.MultiQuerySearchService;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.qian.qianaiagent.interview.QuizApp;
 
 /**
  * 集中的工具注册类
@@ -36,7 +37,7 @@ public class ToolRegistration {
         TerminateTool terminateTool = new TerminateTool();
         // 知识库检索工具 —— Agent 可主动搜索本地技术文档
         RagSearchTool ragSearchTool = new RagSearchTool(multiQuerySearchService);
-        return ToolCallbacks.from(
+        return ToolCallbacks.from(   //工具调用的回调钩子
                 fileOperationTool,
                 webSearchTool,
                 webScrapingTool,

@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import com.qian.qianaiagent.interview.QuizApp;
 
 /**
  * 处理工具调用的基础代理类，具体实现了 think 和 act 方法，可以用作创建实例的父类
@@ -285,23 +286,7 @@ public class ToolCallAgent extends ReActAgent {
         return displayResult;
     }
 
-    // ===== 🧠 第 9 篇核心任务：Plan-and-Execute 模式 =====
-    // 💡 这个方法的定位：让 LLM 扮演"规划师"角色，生成一个结构化的任务计划。
-    //
-    // 你需要实现以下逻辑（按顺序做，每步都不难）：
-    //
-    // ===== 第 1 小步：设计规划 Prompt =====
-    // 💡 LLM 需要被告知"你要输出一个 JSON 格式的计划"。Prompt 要包含：
-    //   - 角色设定：你是一个任务规划专家
-    //   - 输出格式要求：必须输出 JSON，包含 goal 和 steps 两个字段
-    //   - 示例（Few-Shot）：给一个示例计划，LLM 更容易输出正确格式
-    //   - 用户目标：把 userGoal 拼进去
-    //
-    // 📖 基础补充：什么是 Few-Shot？
-    //   在 Prompt 里给 LLM 一个示例，它输出的格式会模仿你的示例。
-    //   比如你给一个包含 3 个步骤的示例计划，LLM 也会输出类似结构的计划。
-    //   这就是为什么"示例"比"描述格式要求"更有效——LLM 擅长模仿。
-    //
+
     private static final String PLAN_SYSTEM_PROMPT = """
     ## 角色设定
     你是专业AI任务规划专家，擅长拆解复杂需求，输出有序、可执行的分步任务清单。
@@ -344,54 +329,7 @@ public class ToolCallAgent extends ReActAgent {
 
     ## 用户任务目标：%s
     """;
-    // 🔴 你的工作：写一个 SYSTEM_PROMPT 字符串，类似 YuManus 里的 System Prompt
-    //    但不是给 Agent 用的，而是给"规划师"用的
-    //
-    // ===== 第 2 小步：调用 LLM 获取计划 =====
-    // 💡 你需要调用 LLM 并让它返回一个 TaskPlan 对象。
-    //
-    // 📖 提示：QuizApp.doQuizReport()（第158行）用了一行代码就做到了：
-    //    chatClient.prompt().system(...).user(...).call().entity(QuizReport.class)
-    //    这行代码做了什么？
-    //    - .system(...) 设置系统提示词（告诉 LLM 角色和规则）
-    //    - .user(...) 设置用户消息（告诉 LLM 具体目标）
-    //    - .call() 发送请求
-    //    - .entity(TaskPlan.class) 让 Spring AI 自动把 JSON 响应解析成 TaskPlan 对象
-    //
-    // 🔴 你的工作：模仿 QuizApp.doQuizReport() 的代码结构，但 entity() 参数用 TaskPlan.class
-    //
 
-
-    // ===== 第 3 小步：容错处理 =====
-    // 💡 LLM 返回的 JSON 可能有问题：
-    //   - 少了一个逗号 → JSON 解析失败
-    //   - 多了一个字段 → 解析没问题（Spring AI 会忽略多余字段）
-    //   - steps 是空数组 → 计划没有步骤，没法执行
-    //
-    // 📖 基础补充：try-catch 的作用
-    //   try { ... } catch (Exception e) { ... } 的意思是：
-    //   "尝试执行 try 里的代码，如果出了 Exception 类型的异常，就执行 catch 里的代码"
-    //   程序不会崩溃，而是优雅地处理错误。
-    //
-    // 🔴 你的工作：
-    //   1. 用 try-catch 包裹 LLM 调用
-    //   2. catch 中 log.warn(...) 记录失败原因
-    //   3. 返回 null —— 调用方看到 null 就知道"计划生成失败，应该降级为 ReAct 模式"
-    //
-    // ===== 为什么这个方法返回 null 是合理的？ =====
-    // 💡 这叫"降级策略"（Fallback Pattern）：
-    //   Plan-and-Execute 失败了 → 不代表整个 Agent 要死掉
-    //   → 返回 null → 调用方自动切回 ReAct 模式继续工作
-    //   这就是"混用模式"的核心思想：Plan 优先，Plan 失败就 ReAct 兜底
-    //
-    // 📖 进阶阅读（学完基础后可以看）：
-    //   - 设计模式：Strategy Pattern（策略模式）
-    //     为什么 Plan 和 ReAct 是两种"策略"？
-    //   - 设计模式：Chain of Responsibility（责任链模式）
-    //     如果以后加更多模式（Multi-Agent、Streaming），怎么组织？
-
-    // ❌ 删除的代码：private final ChatClient chatClient; —— 父类 BaseAgent 已声明，不要重复
-    // ✅ 通过继承的 getChatClient() / setChatClient() 访问
 
     // @formatter:off
     public TaskPlan generatePlan(String userGoal) {
@@ -419,62 +357,6 @@ public class ToolCallAgent extends ReActAgent {
 
     }
 
-    // ===== 🧠 第 9 篇进阶任务：混用模式的切换逻辑 =====
-    // 💡 思考：在什么地方判断"用 Plan 还是 ReAct"？
-    //
-    // 选项 A：在 BaseAgent.run() 的 for 循环之前判断
-    //   优点：入口统一
-    //   缺点：BaseAgent 不知道 TaskPlan 是什么（不符合分层原则）
-    //
-    // 选项 B：在 ToolCallAgent 中判断
-    //   优点：ToolCallAgent 知道所有工具，可以判断任务复杂度
-    //   缺点：run() 在父类 BaseAgent 里，子类不好介入
-    //
-    // 选项 C：重写 run() 方法
-    //   ToolCallAgent 重写父类的 run()，加入 Plan 逻辑
-    //
-    // 💡 建议：先选最简单的方案开始，跑通后再优化
-
-
-    // 📖 基础补充：方法重写（Override）
-    //   子类可以写一个和父类"方法签名完全相同"的方法，覆盖父类的行为。
-    //   比如父类 BaseAgent 有 run()，子类 ToolCallAgent 也可以写一个 run()。
-    //   调用时，Java 会自动用子类的版本。
-    //
-    //   为什么要重写？因为父类的 run() 只支持 ReAct 循环（while + step()），
-    //   你要加的 Plan-and-Execute 逻辑不同（先生成计划 → 再遍历执行），
-    //   所以需要重写 run()。
-    //
-    // 🔴 如果你选择重写 run()，这里给你一个入口：
-    //
-
-
-    // @Override
-    // public String run(String userPrompt) {
-    //     // ===== 🧠 你的代码 =====
-    //     // 1. 判断：这个任务需要规划吗？
-    //     //    提示：怎么判断"需要规划"？
-    //     //    - 简单方案：先调用 generatePlan(userPrompt)，成功了就用 Plan 模式
-    //     //    - 进阶方案：分析用户问题的复杂度（关键字、长度等）
-    //     // 2. 如果需要 → generatePlan() → 遍历 steps 逐步执行
-    //     // 3. 如果不需要 → super.run(userPrompt) 走原来的 ReAct 循环
-    //     // ============================================
-    //     return super.run(userPrompt); // 暂时退回 ReAct
-    // }
-
-    // ❌ ========== 旧的错误实现（已注释，供对比学习）==========
-    // @Override
-    // public String run(String userPrompt) {
-    //     if(generatePlan(userPrompt) != null){         // Bug1: 返回值被丢弃，没赋值给 this.taskPlan
-    //         List<TaskStep> steps = taskPlan.getSteps(); // Bug2: taskPlan 从未赋值 → NullPointerException
-    //         for(TaskStep step : steps){
-    //             step.getDescription();                  // Bug3: 读出来就扔了，无实际作用
-    //             step.setStatus(TaskStep.StepStatus.COMPLETED.ordinal()); // Bug4: ordinal() 把枚举降级为 int
-    //         }
-    //     }
-    //     return super.run(userPrompt);                  // Bug5: 不论 Plan 成败都走 ReAct
-    // }
-    // ❌ ========== 以上是旧代码 ==========
 
     // ✅ ========== 混用模式：判断 + 切换 ==========
     @Override

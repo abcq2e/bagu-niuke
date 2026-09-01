@@ -1,6 +1,6 @@
 package com.qian.qianaiagent.controller;
 
-import com.qian.qianaiagent.chatmemory.FileBasedChatMemory;
+import com.qian.qianaiagent.memory.FileBasedChatMemory;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
