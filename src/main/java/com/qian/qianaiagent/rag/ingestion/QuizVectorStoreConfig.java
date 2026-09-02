@@ -70,7 +70,6 @@ public class QuizVectorStoreConfig {
     VectorStore quizVectorStore(
             @Qualifier("dashscopeEmbeddingModel") EmbeddingModel embeddingModel,
             JdbcTemplate pgVectorJdbcTemplate) {
-
         // 🔴 手动确保 pgvector 扩展和表结构存在
         //    因为主数据源是 MySQL，PGVector 自动配置不会生效，所以需手动处理
         pgVectorJdbcTemplate.execute("CREATE EXTENSION IF NOT EXISTS vector");
@@ -82,18 +81,15 @@ public class QuizVectorStoreConfig {
                     embedding vector(1536)
                 )
                 """);
-
         // 构建 PgVectorStore（Spring AI 1.0.0 的 builder 接受 JdbcTemplate + EmbeddingModel）
         PgVectorStore pgVectorStore = PgVectorStore.builder(pgVectorJdbcTemplate, embeddingModel)
                 .vectorTableName("vector_store")
                 .dimensions(1536)
                 .build();
-
         // 🔴 增量 ETL：对比源文档和已入库文档，只处理新增/更新的文件
-        int existingCount = pgVectorJdbcTemplate.queryForObject(
+        int existingCount = pgVectorJdbcTemplate.queryForObject(     //执行SQL只拿到单个对象
                 "SELECT COUNT(*) FROM vector_store", Integer.class);
         log.info("PGVector 中已有 {} 条向量", existingCount);
-
         // 🔴 旧向量修复：删除没有 topic 元数据的八股旧向量
         //    改造前的向量只有 filename/category，没有 topic，导致方向精确检索永远返回空
         int noTopicCount = pgVectorJdbcTemplate.queryForObject(
@@ -107,7 +103,6 @@ public class QuizVectorStoreConfig {
         } else {
             log.info("✅ 所有向量已有 topic 字段，无需修复");
         }
-
         // 🔴 [Hotfix-RAG联动] 删除 topic 元数据错误的旧向量（extractTopic 修复后，旧数据不匹配方向名）
         //    旧数据的 topic 值为 "java-concurrency" 而非 "Java并发"，导致 topic 过滤失效
         String topicList = String.join("','",
@@ -125,22 +120,18 @@ public class QuizVectorStoreConfig {
             log.info("🔧 删除 {} 条 topic 元数据错误的旧向量（方向名不匹配标准列表），ETL 将重新嵌入",
                     deleted);
         }
-
         // 1. 获取已入库的文档文件名（通过 metadata 中的 filename 字段）
         //    注意：这个查询在旧向量删除之后执行，所以已删除文件的文件名不再出现
         List<String> existingFilenames = pgVectorJdbcTemplate.queryForList(
                 "SELECT DISTINCT metadata->>'filename' AS filename FROM vector_store WHERE metadata->>'filename' IS NOT NULL",
                 String.class);
         log.info("现有文件列表: {}", existingFilenames);
-
         // 2. 加载所有源文档
         List<Document> allDocuments = quizDocumentLoader.loadDocuments();
-
         // 孤儿清理：删除源目录中已不存在的文件对应的向量
         List<String> sourceFilenames = allDocuments.stream()
                 .map(doc -> (String) doc.getMetadata().get("filename"))
                 .distinct().toList();
-
         for (String existing : existingFilenames) {
             if (!sourceFilenames.contains(existing)) {
                 int deleted = pgVectorJdbcTemplate.update(
@@ -148,15 +139,12 @@ public class QuizVectorStoreConfig {
                 log.info("🗑️ 源文件已删除，清理孤儿向量: {} ({} 条)", existing, deleted);
             }
         }
-
         // 3. 按文件名分组，找出新增/更新的文件
         var docGroups = allDocuments.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
                         doc -> (String) doc.getMetadata().get("filename")));
-
         List<String> newOrUpdatedFiles = new java.util.ArrayList<>();
         List<Document> newDocuments = new java.util.ArrayList<>();
-
         for (var entry : docGroups.entrySet()) {
             String filename = entry.getKey();
             if (!existingFilenames.contains(filename)) {
@@ -164,16 +152,13 @@ public class QuizVectorStoreConfig {
                 newDocuments.addAll(entry.getValue());
             }
         }
-
         if (newDocuments.isEmpty()) {
             log.info("✅ 知识库已是最新，无需增量更新");
         } else {
             log.info("🆕 检测到 {} 个新文件需要入库: {}", newOrUpdatedFiles.size(), newOrUpdatedFiles);
-
             // 4. 只对新文档做切分 + 嵌入
             List<Document> splitDocuments = myTokenTextSplitter.splitForKnowledgeBase(newDocuments);
             log.info("新文档切分完成，共 {} 条片段，开始嵌入...", splitDocuments.size());
-
             int batchSize = 25;
             int total = splitDocuments.size();
             for (int i = 0; i < total; i += batchSize) {
@@ -185,7 +170,6 @@ public class QuizVectorStoreConfig {
             log.info("✅ 增量 ETL 完成，新增 {} 条向量（来自 {} 个文件）",
                     total, newOrUpdatedFiles.size());
         }
-
         // 🔴 [RAG优化] 创建 HNSW 索引加速向量检索（IVFFlat 需要训练，HNSW 无需训练且速度更快）
         //    cosine_ops 与 PGVector 默认的 cosine 相似度计算一致
         try {
@@ -197,7 +181,6 @@ public class QuizVectorStoreConfig {
             // HNSW 可能在向量维度不一致时失败，但不会影响查询（只是慢一些）
             log.warn("HNSW 索引创建失败（不影响使用，仅检索速度降低）: {}", e.getMessage());
         }
-
         return pgVectorStore;
     }
 }

@@ -35,3 +35,16 @@ public class EmbeddingConfig {
         return dashscopeEmbeddingModel;
     }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+

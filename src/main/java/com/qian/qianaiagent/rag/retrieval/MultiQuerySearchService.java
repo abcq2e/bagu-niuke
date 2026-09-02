@@ -54,7 +54,7 @@ public class MultiQuerySearchService {
     public List<Document> multiQuerySearch(String userQuery, int numberOfQueries,
                                            int topK, double similarityThreshold) {
         // Step 1: 生成多个查询变体
-        List<String> queryVariants = queryRewriter.doMultiQueryExpand(userQuery, numberOfQueries);
+        List<String> queryVariants = queryRewriter.doMultiQueryExpand(userQuery, numberOfQueries); //生成变体
 
         // Step 2: 对每个变体执行检索，收集所有结果
         List<Document> allResults = new ArrayList<>();
@@ -75,14 +75,12 @@ public class MultiQuerySearchService {
             seen.merge(doc.getId(), doc,
                     (old, neu) -> neu.getScore() > old.getScore() ? neu : old);
         }
-
         // Step 4: 按分数降序排序，截取 topK
         return seen.values().stream()
                 .sorted(Comparator.comparing(Document::getScore).reversed())
                 .limit(topK)
                 .toList();
     }
-
     // ================================================================
     // 🧠 进阶挑战（第 2 篇任务 4）：并行检索优化
     // ================================================================

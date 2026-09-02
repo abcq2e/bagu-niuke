@@ -66,9 +66,8 @@ public final class DimensionValidator {
      */
     public static boolean isValidDimensionName(String topic, String dimName) {
         if (topic == null || dimName == null || dimName.isBlank()) return false;
-        List<String> dims = TopicDimensions.getDimensions(topic);
+        List<String> dims = TopicDimensions.getDimensions(topic);   //提取维度
         if (dims.isEmpty()) return false;
-
         for (String dim : dims) {
             if (dim.equals(dimName)) return true;
             String subject = TopicDimensions.dimensionSubject(dim);
@@ -78,6 +77,10 @@ public final class DimensionValidator {
         }
         return false;
     }
+
+
+
+
 
     /**
      * 从原始 DIM 标签列表中过滤出合法维度名。
@@ -93,7 +96,6 @@ public final class DimensionValidator {
         if (topic == null || rawTags == null || rawTags.isEmpty()) return List.of();
         List<String> dims = TopicDimensions.getDimensions(topic);
         if (dims.isEmpty()) return List.of();
-
         List<String> result = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         for (String tag : rawTags) {
@@ -133,13 +135,11 @@ public final class DimensionValidator {
         boolean bValid = linkBDims != null && !linkBDims.isEmpty();
         boolean bLowConf = "low".equalsIgnoreCase(bSelfConfidence);
         boolean bMediumConf = "medium".equalsIgnoreCase(bSelfConfidence);
-
         // 场景 1：A 和 B 均有值
         if (aValid && bValid) {
             // 检查交集
             List<String> intersection = new ArrayList<>(linkAValidDims);
             intersection.retainAll(linkBDims);
-
             if (!intersection.isEmpty()) {
                 if (bLowConf || bMediumConf) {
                     // 交集存在但 B 自评不自信 → LOW（不直接信任）
@@ -159,7 +159,6 @@ public final class DimensionValidator {
                         linkAValidDims, linkBDims);
             }
         }
-
         // 场景 2：自由出题（A 空，B 有效）
         if (!aValid && bValid) {
             return new DimensionClassification(
@@ -173,7 +172,6 @@ public final class DimensionValidator {
                     linkAValidDims, ConfidenceLevel.LOW, "link_a",
                     linkAValidDims, linkBDims);
         }
-
         // 场景 4：A 和 B 均无有效值 → INVALID
         return DimensionClassification.empty();
     }
