@@ -1,23 +1,18 @@
 package com.qian.qianaiagent.interview;
 
 import com.qian.qianaiagent.advisor.MyLoggerAdvisor;
-import com.qian.qianaiagent.graph.listener.ConversationGraphAdvisor;
-import com.qian.qianaiagent.rag.retrieval.QueryRewriter;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.api.Advisor;
-import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.ai.tool.ToolCallback;
-import org.springframework.ai.tool.ToolCallbackProvider;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 
@@ -43,7 +38,6 @@ import com.qian.qianaiagent.knowledge.TopicDocumentCache;
 @Slf4j
 public class QuizApp {
 
-    private final ChatClient chatClient;
     private final ChatClient quizChatClient;
 
     /**
@@ -81,22 +75,8 @@ public class QuizApp {
 
     private final ChatMemory chatMemory; // 🔴 保存引用，用于持久化题目到聊天记录
 
-    public QuizApp(ChatModel openAiChatModel, ChatMemory chatMemory,
-                   ObjectProvider<ConversationGraphAdvisor> graphAdvisorProvider) {
+    public QuizApp(ChatModel openAiChatModel, ChatMemory chatMemory) {
         this.chatMemory = chatMemory;
-        List<Advisor> advisors = new ArrayList<>();
-        advisors.add(MessageChatMemoryAdvisor.builder(chatMemory).build());
-        advisors.add(new MyLoggerAdvisor());
-        graphAdvisorProvider.ifAvailable(advisor -> {
-            advisors.add(advisor);
-            log.info("✅ 对话知识图谱同步已启用");
-        });
-
-        chatClient = ChatClient.builder(openAiChatModel)
-                .defaultSystem(SYSTEM_PROMPT)
-                .defaultAdvisors(advisors.toArray(new Advisor[0]))
-                .build();
-
         List<Advisor> quizAdvisors = new ArrayList<>();
         quizAdvisors.add(MessageChatMemoryAdvisor.builder(chatMemory).build());
         quizAdvisors.add(new MyLoggerAdvisor());
@@ -107,6 +87,7 @@ public class QuizApp {
 
     @PostConstruct
     public void init() {
+
         log.info("✅ QuizApp 初始化完成（严格顺序轮询模式）");
     }
 
@@ -151,10 +132,7 @@ public class QuizApp {
     // 核心方法
     // ========================================================================
 
-    public Flux<String> doUnifiedChat(String message, String chatId) {
-        return doUnifiedChat(message, chatId, null);
-    }
-
+    //这个才是主方法
     public Flux<String> doUnifiedChat(String message, String chatId, Long userId) {
         return Flux.defer(() -> {
             // Step 1: 初始化会话游标（用户绑定：用 userId 做 key）
@@ -163,9 +141,6 @@ public class QuizApp {
             final String stateKey = ck;
             final String migrationSource = (!ck.equals(chatId)) ? chatId : null;
             sequentialRotationService.initSession(ck, migrationSource, topicDocumentCache);
-
-            // 🔴 [Bug修复] 游标持久化了 lastShown，但 JVM Map 重启后为空。
-            // 若仍当 isFirstMessage，会跳过点评并欢迎，导致「题目/点评」错位。
             String persistedLastStem = sequentialRotationService.getLastShownStem(ck);
             String persistedLastTopic = sequentialRotationService.getLastShownTopic(ck);
             if (persistedLastStem != null && !persistedLastStem.isBlank()) {
@@ -176,39 +151,25 @@ public class QuizApp {
                 lastQuestions.putIfAbsent(stateKey,
                         new QuestionContext(persistedLastTopic != null ? persistedLastTopic : "", ""));
             }
-
-            // Step 2: 判断消息类型（整句精确匹配，禁止 contains）
             boolean isFirstMessage = !lastQuestions.containsKey(stateKey);
             boolean isNextCmd = QuizCommandMatcher.isNext(message);
             boolean isSkipDir = QuizCommandMatcher.isSkipDir(message);
             boolean isResetMemory = QuizCommandMatcher.isResetMemory(message);
-            // 🔴 [Bug修复] 指令类消息（"下一题""换个方向"等）不参与 retry 检测，
-            // 否则连续发送两次相同指令会被误判为页面刷新，导致题目无法跳过
             boolean isRetry = message != null && message.equals(lastRetryKeys.get(stateKey))
                     && !isNextCmd && !isSkipDir && !isResetMemory;
-
-            // Step 3: 方向内历史截断（memory 仍按 chatId 隔离）
-            // 🔴 [Bug修复] 降低截断阈值为4，防止旧点评内容污染 AI 上下文。
-            // 旧值10会保留约5轮对话，AI 可能在历史中看到上道题的点评，
-            // 当用户回答模糊时（如"不知道"），AI 会混淆并复读旧点评。
-            // 4条=最近2轮对话，足够维持连贯性，同时清除旧题干扰。
             Integer cachedCount = messageCounts.get(stateKey);
             if (cachedCount == null || cachedCount > 4) {
                 int actualCount = topicMemoryTrimmer.trimToRecentN(chatId, 4);
                 messageCounts.put(stateKey, Math.min(actualCount, 4));
             }
-
             if (isResetMemory) {
                 String currentTopic = sequentialRotationService.currentTopic(ck);
                 topicMemoryTrimmer.forceCleanMemory(chatId, currentTopic);
                 log.info("🧹 用户重置记忆: chatId={}, topic={}", chatId, currentTopic);
             }
-
             if (isNextCmd) {
                 log.info("⏭️ 用户说下一题: chatId={}", chatId);
             }
-
-            // ====== 关键区：加锁读取游标 + 预占题目 + 构建题目块 ======
             String topic;
             String currentStem = null;
             final String questionBlock;
@@ -217,7 +178,6 @@ public class QuizApp {
             final String evalStem;
             final String evalTopic;
             final SequentialRotationService.SequentialCursor cursorSnapshot;
-
             synchronized (chatLocks.computeIfAbsent(ck, k -> new Object())) {
                 // 🔴 [Bug修复-内存泄漏] 更新最后访问时间，供定时清理使用
                 lastAccessByKey.put(ck, System.currentTimeMillis());
@@ -230,7 +190,6 @@ public class QuizApp {
                     }
                     log.info("⏭️ 用户跳过方向: {} → {}", oldTopic, newTopic);
                 }
-
                 topic = sequentialRotationService.currentTopic(ck);
                 if (topic == null) {
                     log.info("🏁 所有方向题目已考完: ck={}, chatId={}", ck, chatId);
@@ -238,15 +197,8 @@ public class QuizApp {
                             + "16个知识方向，共计2285道面试题，你已全部完成。\n"
                             + "如果你需要重新开始，请刷新页面或新建对话。");
                 }
-
-                // 重连不推进；首条消息不推进（用户还未回答任何题，不应跳过）；重置记忆不推进（仅清理上下文）
-                // 🔴 [Bug修复] 首条消息即使是"下一题"等指令也不应推进游标，否则用户会丢失第一道题
-                // 🔴 [Bug修复] 重置记忆时不应推进游标，用户只是想清理对话上下文，不是想跳过题目
                 boolean shouldAdvance = !isRetry && !isFirstMessage && !isResetMemory;
                 if (isRetry) {
-                    // 🔴 [Bug修复] 优先从 pendingEvalStemMap 恢复（AI调用失败时的容错），
-                    // 其次从 lastShownStems（doOnError已恢复为正确题目），
-                    // 防止成功请求后重试时 lastShownStems 已指向下一题导致题目不对应。
                     String pendingStem = pendingEvalStemMap.get(stateKey);
                     currentStem = (pendingStem != null && !pendingStem.isBlank())
                             ? pendingStem : lastShownStems.get(stateKey);
@@ -308,19 +260,14 @@ public class QuizApp {
                                     topic, seedCount);
                         }
                     }
-
                     while (skips < maxSkips) {
                         int[] range = sequentialRotationService.getCurrentQuestionRange(ck);
                         if (range == null || range[0] >= range[1]) break;
-
                         String checkTopic = sequentialRotationService.currentTopic(ck);
                         if (checkTopic == null) break;
-
                         List<String> allQuestions = topicDocumentCache.getOrderedQuestions(checkTopic);
                         if (range[0] >= allQuestions.size()) break;
-
                         String candidate = allQuestions.get(range[0]);
-
                         // 检查是否与已问题目/错题本重复
                         if (!topicRotationService.isQuestionAsked(ck, checkTopic, range[0])) {
                             currentStem = candidate;
@@ -332,14 +279,12 @@ public class QuizApp {
                             }
                             break;
                         }
-
                         // 🔴 [Bug修复] 跳过重复题目时不调用markQuestionAsked，避免触发方向切换破坏严格顺序
                         // 只记录跳过计数，由外层统一推进游标
                         log.info("🔍 跳过重复题目 [{}]: {}...", checkTopic,
                                 candidate.length() > 40 ? candidate.substring(0, 40) : candidate);
                         skips++;
                     }
-
                     // 全部重复时的兜底：取当前位置的题目（即使重复也比无题可出强）
                     if (currentStem == null) {
                         int[] fallbackRange = sequentialRotationService.getCurrentQuestionRange(ck);
@@ -363,7 +308,6 @@ public class QuizApp {
                         }
                     }
                 }
-
                 if (currentStem == null || currentStem.isBlank()) {
                     log.error("❌ 无法获取题 stem: chatId={}, topic={}", chatId, topic);
                     return Flux.just("[ERROR] 题库数据异常，请联系管理员。");
@@ -497,6 +441,27 @@ public class QuizApp {
                 ctx.append(specPrompt).append("\n");
             }
 
+            // 🔴 [RAG接入] 用待点评题目检索知识库，让 AI 的参考答案有据可依。
+            // 不做查询改写（多查询扩展性价比低），直接单次检索；失败降级为纯 LLM 点评。
+            if (effectiveEvalStem != null && !effectiveEvalStem.isBlank()) {
+                try {
+                    List<Document> ragDocs = quizVectorStore.similaritySearch(
+                            SearchRequest.builder()
+                                    .query(effectiveEvalStem)
+                                    .topK(3)
+                                    .similarityThreshold(0.3)
+                                    .build());
+                    if (!ragDocs.isEmpty()) {
+                        ctx.append("\n【知识库参考】（供给出参考答案时参考，仍保持精简风格）\n");
+                        for (Document doc : ragDocs) {
+                            ctx.append("- ").append(doc.getText()).append("\n");
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("⚠️ RAG 检索失败，降级为纯 LLM 点评: {}", e.getMessage());
+                }
+            }
+
             if (message != null) {
                 lastRetryKeys.put(stateKey, message);
             }
@@ -603,47 +568,11 @@ public class QuizApp {
     }
 
     // ========================================================================
-    // 辅助方法
+    // 依赖与状态
     // ========================================================================
 
-    public String doChat(String message, String chatId) {
-        ChatResponse chatResponse = chatClient
-                .prompt().user(message)
-                .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, chatId))
-                .call().chatResponse();
-        return chatResponse.getResult().getOutput().getText();
-    }
-
-    public Flux<String> doChatByStream(String message, String chatId) {
-        return chatClient.prompt().user(message)
-                .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, chatId))
-                .stream().content();
-    }
-
-    record QuizReport(String title, List<String> suggestions) {}
-
-    public QuizReport doQuizReport(String message, String chatId) {
-        return chatClient.prompt()
-                .system(SYSTEM_PROMPT + "每次考察后都要生成考察报告")
-                .user(message)
-                .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, chatId))
-                .call().entity(QuizReport.class);
-    }
-
+    /** 知识库向量检索（RAG）：AI 点评时检索参考答案依据，不做查询改写 */
     @Resource private VectorStore quizVectorStore;
-    @Resource private QueryRewriter queryRewriter;
-
-    public String doQuizWithRag(String message, String chatId) {
-        String rewrittenMessage = queryRewriter.doQueryRewrite(message);
-        ChatResponse chatResponse = chatClient.prompt()
-                .user(rewrittenMessage)
-                .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, chatId))
-                .advisors(QuestionAnswerAdvisor.builder(quizVectorStore).build())
-                .call().chatResponse();
-        return chatResponse.getResult().getOutput().getText();
-    }
-
-    @Resource private ToolCallback[] allTools;
 
     private final Map<String, QuestionContext> lastQuestions = new ConcurrentHashMap<>();
     /** 上轮题干（供 AI 区分"要讲解的上一题"和"要问的下一题"） */

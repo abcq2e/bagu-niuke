@@ -356,13 +356,4 @@ public class AiController {
         return java.util.Map.of("success", true, "chatId", chatId);
     }
 
-    // ===== 以下为保留的旧接口，向后兼容 =====
-
-    /**
-     * @deprecated 使用 /ai/chat 替代
-     */
-    @GetMapping(value = "/quiz/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> doQuizStream(String message, String chatId) {
-        return quizApp.doChatByStream(message, chatId);
-    }
 }
