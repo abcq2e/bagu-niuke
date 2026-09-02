@@ -66,14 +66,11 @@ public class QuizDocumentLoader {
             for (Resource resource : resources) {
                 String filename = resource.getFilename();
                 log.info("加载 Markdown 文档: {}", filename);
-                // 用文件名前缀作为分类标签（如 "八股-Java并发.md" → "八股"）
-                String category = extractCategory(filename);
                 MarkdownDocumentReaderConfig config = MarkdownDocumentReaderConfig.builder()
                         .withHorizontalRuleCreateDocument(true)
                         .withIncludeCodeBlock(false)
                         .withIncludeBlockquote(false)
                         .withAdditionalMetadata("filename", filename)
-                        .withAdditionalMetadata("category", category)
                         .withAdditionalMetadata("topic", extractTopic(filename))
                         .build();
                 MarkdownDocumentReader reader = new MarkdownDocumentReader(resource, config);
@@ -99,22 +96,15 @@ public class QuizDocumentLoader {
             for (Resource resource : resources) {
                 String filename = resource.getFilename();
                 log.info("加载 PDF 文档: {}", filename);
-                String category = extractCategory(filename);
-
-                // === 第 1 步：提取文字 ===
                 PdfDocumentReaderConfig config = PdfDocumentReaderConfig.builder()
                         .withPagesPerDocument(1)  // 每页作为一个 Document
                         .build();
                 PagePdfDocumentReader reader = new PagePdfDocumentReader(resource, config);
                 List<Document> pdfDocs = reader.read();
-
-                // === 第 2 步：提取图片 + AI 识别 ===
                 try {
                     byte[] pdfBytes = resource.getContentAsByteArray();
                     List<PdfImageAnalyzer.ImageAnalysisResult> imageResults =
-                            pdfImageAnalyzer.analyzeImages(pdfBytes, filename);
-
-                    // 将图片描述合并到对应页的 Document 中
+                            pdfImageAnalyzer.analyzeImages(pdfBytes, filename);    // AI 识别图片
                     for (PdfImageAnalyzer.ImageAnalysisResult imageResult : imageResults) {
                         int pageIndex = imageResult.pageNumber() - 1; // 0-based
                         if (pageIndex < pdfDocs.size()) {
@@ -135,7 +125,6 @@ public class QuizDocumentLoader {
                 // 为每页附加元数据
                 for (Document doc : pdfDocs) {
                     doc.getMetadata().put("filename", filename);
-                    doc.getMetadata().put("category", category);
                     doc.getMetadata().put("topic", extractTopic(filename));
                 }
                 documents.addAll(pdfDocs);
@@ -144,28 +133,6 @@ public class QuizDocumentLoader {
             log.error("PDF 文档加载失败", e);
         }
         return documents;
-    }
-
-    /**
-     * 从文件名前缀提取分类标签
-     * <p>
-     * 文件命名规范：<b>分类-文档名.md</b>，分类名取第一个 "-" 之前的部分。
-     * <pre>
-     *   "八股-Java并发编程知识点.md"  →  "八股"
-     *   "Agent-MCP.md"              →  "Agent"
-     *   "实践-落地实践.md"            →  "实践"
-     *   "没有前缀的文件.md"           →  "default"
-     * </pre>
-     */
-    private String extractCategory(String filename) {
-        if (filename == null || filename.isEmpty()) {
-            return "default";
-        }
-        int dashIndex = filename.indexOf('-');
-        if (dashIndex <= 0) {
-            return "default";
-        }
-        return filename.substring(0, dashIndex);
     }
 
     /**

@@ -631,7 +631,6 @@ public class QuizApp {
     }
 
     @Resource private VectorStore quizVectorStore;
-    @Resource private Advisor quizRagCloudAdvisor;
     @Resource private QueryRewriter queryRewriter;
 
     public String doQuizWithRag(String message, String chatId) {
@@ -640,7 +639,6 @@ public class QuizApp {
                 .user(rewrittenMessage)
                 .advisors(spec -> spec.param(ChatMemory.CONVERSATION_ID, chatId))
                 .advisors(QuestionAnswerAdvisor.builder(quizVectorStore).build())
-                .advisors(quizRagCloudAdvisor)
                 .call().chatResponse();
         return chatResponse.getResult().getOutput().getText();
     }
