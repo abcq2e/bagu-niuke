@@ -218,7 +218,6 @@ public abstract class BaseAgent {
                 this.cleanup();
             }
         });
-
         // 设置超时回调
         sseEmitter.onTimeout(() -> {
             this.state = AgentState.ERROR;
@@ -272,7 +271,7 @@ public abstract class BaseAgent {
             messageList.add(new UserMessage(userPrompt));
             try {
                 // AgentTrace 初始化
-                AgentTrace trace = AgentTrace.builder()
+                AgentTrace trace = AgentTrace.builder()    //构建一次Agent的trace记录
                         .agentName(this.name)
                         .startTime(LocalDateTime.now())
                         .steps(new ArrayList<>())
@@ -287,7 +286,7 @@ public abstract class BaseAgent {
                     String stepResult = step();
                     long stepDuration = System.currentTimeMillis() - stepStart;
                     // 记录 TraceStep
-                    TraceStep traceStep = TraceStep.builder()
+                    TraceStep traceStep = TraceStep.builder()   //逐步构建
                             .stepNumber(stepNumber)
                             .stepType("STEP")
                             .whatHappened(stepResult)
