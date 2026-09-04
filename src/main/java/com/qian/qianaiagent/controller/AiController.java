@@ -14,6 +14,7 @@ import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -29,6 +30,7 @@ import reactor.core.scheduler.Schedulers;
 
 import java.util.concurrent.Executor;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -188,13 +190,14 @@ public class AiController {
      */
     @RateLimit(maxRequests = 10, timeWindow = 60)
     @GetMapping(value = "/agent/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> doAgentChat(@RequestParam String message,
-                                    @RequestParam(required = false) String chatId) {
+    public SseEmitter doAgentChat(@RequestParam String message,
+                                  @RequestParam(required = false) String chatId) {
+        // 输入校验：失败时立即返回错误 SSE 响应
         if (message == null || message.isBlank()) {
-            return Flux.just("[ERROR] 消息不能为空", "[DONE]");
+            return buildErrorEmitter("消息不能为空");
         }
         if (message.length() > MAX_MESSAGE_LENGTH) {
-            return Flux.just("[ERROR] 消息过长，最多 " + MAX_MESSAGE_LENGTH + " 字", "[DONE]");
+            return buildErrorEmitter("消息过长，最多 " + MAX_MESSAGE_LENGTH + " 字");
         }
         // 生成或复用 chatId
         final String finalChatId = (chatId == null || chatId.isBlank())
@@ -215,21 +218,46 @@ public class AiController {
         }
 
         final int savedHistorySize = historySize;
-        return agent.runStreamAsFlux(message)
-                .doFinally(signalType -> {
-                    // 保存本轮新消息（排除预加载的历史，避免重复存储）
-                    List<Message> fullList = agent.getMessageList();
-                    if (fullList.size() > savedHistorySize) {
-                        List<Message> newMessages = new ArrayList<>(
-                                fullList.subList(savedHistorySize, fullList.size()));
-                        agentChatMemory.add(finalChatId, newMessages);
-                        log.info("💾 保存 Agent 对话: chatId={}, newMessages={}, signal={}",
-                                finalChatId, newMessages.size(), signalType);
-                    }
-                })
-                .doOnError(e -> log.error("❌ Agent SSE 流异常: chatId={}, error={}",
-                        finalChatId, e.getMessage(), e))
-                .doOnComplete(() -> log.info("✅ Agent SSE 流完成: chatId={}", finalChatId));
+        SseEmitter emitter = agent.runStream(message);
+        // 流结束（正常完成 / 异常完成）后保存本轮新消息
+        emitter.onCompletion(() -> {
+            saveAgentMessages(agent, finalChatId, savedHistorySize, "completed");
+            log.info("✅ Agent SSE 流完成: chatId={}", finalChatId);
+        });
+        // 超时兜底保存
+        emitter.onTimeout(() -> {
+            saveAgentMessages(agent, finalChatId, savedHistorySize, "timeout");
+            log.warn("⏱ Agent SSE 流超时: chatId={}", finalChatId);
+        });
+        return emitter;
+    }
+
+    /**
+     * 构造一个立即返回错误信息的 SSE 响应（输入校验失败时使用）
+     */
+    private SseEmitter buildErrorEmitter(String msg) {
+        SseEmitter emitter = new SseEmitter(300000L);
+        try {
+            emitter.send("[ERROR] " + msg);
+            emitter.send("[DONE]");
+            emitter.complete();
+        } catch (IOException e) {
+            emitter.completeWithError(e);
+        }
+        return emitter;
+    }
+
+    /**
+     * 保存本轮 Agent 对话新增消息到记忆（排除预加载的历史，避免重复存储）
+     */
+    private void saveAgentMessages(YuManus agent, String chatId, int savedHistorySize, String signal) {
+        List<Message> fullList = agent.getMessageList();
+        if (fullList.size() > savedHistorySize) {
+            List<Message> newMessages = new ArrayList<>(fullList.subList(savedHistorySize, fullList.size()));
+            agentChatMemory.add(chatId, newMessages);
+            log.info("💾 保存 Agent 对话: chatId={}, newMessages={}, signal={}",
+                    chatId, newMessages.size(), signal);
+        }
     }
 
     /**

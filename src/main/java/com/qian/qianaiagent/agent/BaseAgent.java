@@ -11,8 +11,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -152,10 +150,10 @@ public abstract class BaseAgent {
     }
 
     /**
-     * 运行代理（流式输出）
+     * 运行代理（流式输出，MVC 原生 SSE）
      *
      * @param userPrompt 用户提示词
-     * @return 执行结果
+     * @return SseEmitter 流式响应，每步结果独立推送，结束后发送 "[DONE]"
      */
     public SseEmitter runStream(String userPrompt) {
         // 创建一个超时时间较长的 SseEmitter
@@ -166,11 +164,13 @@ public abstract class BaseAgent {
             try {
                 if (this.state != AgentState.IDLE) {
                     sseEmitter.send("错误：无法从状态运行代理：" + this.state);
+                    sseEmitter.send("[DONE]");
                     sseEmitter.complete();
                     return;
                 }
                 if (StrUtil.isBlank(userPrompt)) {
                     sseEmitter.send("错误：不能使用空提示词运行代理");
+                    sseEmitter.send("[DONE]");
                     sseEmitter.complete();
                     return;
                 }
@@ -178,30 +178,54 @@ public abstract class BaseAgent {
                 sseEmitter.completeWithError(e);   //出现异常关闭
             }
             // 2、执行，更改状态
-            this.state = AgentState.RUNNING;    //OK之后的
+            this.state = AgentState.RUNNING;
             // 记录消息上下文
             messageList.add(new UserMessage(userPrompt));
-            // 保存结果列表
-            List<String> results = new ArrayList<>();
             try {
+                // AgentTrace 初始化
+                AgentTrace trace = AgentTrace.builder()
+                        .agentName(this.name)
+                        .startTime(LocalDateTime.now())
+                        .steps(new ArrayList<>())
+                        .build();
                 // 执行循环
                 for (int i = 0; i < maxSteps && state != AgentState.FINISHED; i++) {
                     int stepNumber = i + 1;
                     currentStep = stepNumber;
                     log.info("Executing step {}/{}", stepNumber, maxSteps);
                     // 单步执行
+                    long stepStart = System.currentTimeMillis();
                     String stepResult = step();
-                    String result = "Step " + stepNumber + ": " + stepResult;
-                    results.add(result);
-                    // 输出当前每一步的结果到 SSE
-                    sseEmitter.send(result);
+                    long stepDuration = System.currentTimeMillis() - stepStart;
+                    // 记录 TraceStep
+                    TraceStep traceStep = TraceStep.builder()
+                            .stepNumber(stepNumber)
+                            .stepType("STEP")
+                            .whatHappened(stepResult)
+                            .timestamp(LocalDateTime.now())
+                            .durationMs(stepDuration)
+                            .resultSummary(stepResult.length() > 200
+                                    ? stepResult.substring(0, 200) + "..."
+                                    : stepResult)
+                            .build();
+                    trace.getSteps().add(traceStep);
+                    // 输出当前每一步的结果到 SSE（stepResult 自带 💬/✅ 等标识，无需再加 "Step N:" 前缀）
+                    sseEmitter.send(stepResult);
                 }
                 // 检查是否超出步骤限制
                 if (currentStep >= maxSteps) {
                     state = AgentState.FINISHED;
-                    results.add("Terminated: Reached max steps (" + maxSteps + ")");
                     sseEmitter.send("执行结束：达到最大步骤（" + maxSteps + "）");
                 }
+                // 封口 Trace
+                trace.setEndTime(LocalDateTime.now());
+                trace.setFinalState(state.name());
+                String traceJson = JSONUtil.toJsonPrettyStr(trace);
+                log.info("Agent Trace:\n{}", traceJson);
+                // 保存 Trace 文件
+                saveTraceToFile(traceJson);
+                // 发送结束标记
+                sseEmitter.send("[DONE]");
                 // 正常完成
                 sseEmitter.complete();
             } catch (Exception e) {
@@ -209,6 +233,7 @@ public abstract class BaseAgent {
                 log.error("error executing agent", e);
                 try {
                     sseEmitter.send("执行错误：" + e.getMessage());
+                    sseEmitter.send("[DONE]");
                     sseEmitter.complete();
                 } catch (IOException ex) {
                     sseEmitter.completeWithError(ex);
@@ -242,92 +267,7 @@ public abstract class BaseAgent {
      */
     public abstract String step();
 
-    /**
-     * 运行代理（Flux 流式输出）
-     * <p>
-     * 与 QuizApp 的 Flux&lt;String&gt; API 风格一致，可直接用于 SSE 端点。
-     * 每个步骤结果以独立事件推送，结束后发送 "[DONE]"。
-     *
-     * @param userPrompt 用户提示词
-     * @return 流式执行结果
-     */
-    public Flux<String> runStreamAsFlux(String userPrompt) {
-        return Flux.create(sink -> {
-            // 1、基础校验
-            if (this.state != AgentState.IDLE) {
-                sink.next("错误：Agent 当前状态为 " + this.state + "，无法启动。");
-                sink.next("[DONE]");
-                sink.complete();
-                return;
-            }
-            if (StrUtil.isBlank(userPrompt)) {
-                sink.next("错误：不能使用空提示词运行 Agent。");
-                sink.next("[DONE]");
-                sink.complete();
-                return;
-            }
-            // 2、执行，更改状态
-            this.state = AgentState.RUNNING;
-            messageList.add(new UserMessage(userPrompt));
-            try {
-                // AgentTrace 初始化
-                AgentTrace trace = AgentTrace.builder()    //构建一次Agent的trace记录
-                        .agentName(this.name)
-                        .startTime(LocalDateTime.now())
-                        .steps(new ArrayList<>())
-                        .build();
-                // 执行循环
-                for (int i = 0; i < maxSteps && state != AgentState.FINISHED; i++) {
-                    int stepNumber = i + 1;
-                    currentStep = stepNumber;
-                    log.info("Executing step {}/{}", stepNumber, maxSteps);
-                    // 单步执行
-                    long stepStart = System.currentTimeMillis();
-                    String stepResult = step();
-                    long stepDuration = System.currentTimeMillis() - stepStart;
-                    // 记录 TraceStep
-                    TraceStep traceStep = TraceStep.builder()   //逐步构建
-                            .stepNumber(stepNumber)
-                            .stepType("STEP")
-                            .whatHappened(stepResult)
-                            .timestamp(LocalDateTime.now())
-                            .durationMs(stepDuration)
-                            .resultSummary(stepResult.length() > 200
-                                    ? stepResult.substring(0, 200) + "..."
-                                    : stepResult)
-                            .build();
-                    trace.getSteps().add(traceStep);
-                    // 推送步骤结果到流（stepResult 自带 💬/✅ 等标识，无需再加 "Step N:" 前缀）
-                    sink.next(stepResult);
-                }
-                // 检查是否超出步骤限制
-                if (currentStep >= maxSteps) {
-                    state = AgentState.FINISHED;
-                    sink.next("执行结束：达到最大步骤（" + maxSteps + "）");
-                }
-                // 封口 Trace
-                trace.setEndTime(LocalDateTime.now());
-                trace.setFinalState(state.name());
-                String traceJson = JSONUtil.toJsonPrettyStr(trace);
-                log.info("Agent Trace:\n{}", traceJson);
-                // 保存 Trace 文件
-                saveTraceToFile(traceJson);
-                // 发送结束标记
-                sink.next("[DONE]");
-                sink.complete();
-            } catch (Exception e) {
-                state = AgentState.ERROR;
-                log.error("error executing agent", e);
-                sink.next("执行错误：" + e.getMessage());
-                sink.next("[DONE]");
-                sink.complete();
-            } finally {
-                this.cleanup();
-            }
-        });
-    }
-
-    /** 保存 Trace 到文件（run() 和 runStreamAsFlux() 共用） */
+    /** 保存 Trace 到文件（run() 和 runStream() 共用） */
     private void saveTraceToFile(String traceJson) {
         try {
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
