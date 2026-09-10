@@ -344,11 +344,15 @@
             用法： mvn spring-boot:run -Peval
             含稳定性测试（连跑 5 次）： 加 -Dspring-boot.run.arguments=qian.eval.stability=5
             详见 docs/superpowers/specs/2026-09-10-evaluation-harness-design.md
+
+            注意 local,eval 的顺序与两者并存：application.yml 默认 active=local，
+            这里必须显式带上 local，否则 application-local.yml（数据库密码、各 API key）
+            不会被加载，应用根本起不来。eval 只是叠加在上面的开关。
         -->
         <profile>
             <id>eval</id>
             <properties>
-                <spring-boot.run.profiles>eval</spring-boot.run.profiles>
+                <spring-boot.run.profiles>local,eval</spring-boot.run.profiles>
             </properties>
         </profile>
     </profiles>
