@@ -1,0 +1,9 @@
+# eval profile：离线回归评测专用
+# 用法： mvn spring-boot:run -Peval
+# 大跑： mvn spring-boot:run -Peval -Dspring-boot.run.arguments=--qian.eval.stability=5
+qian:
+  eval:
+    # 打开后 EvalRunner 才会作为 CommandLineRunner 执行；正常启动应用时保持 false
+    enabled: true
+    # 稳定性重复次数，0 = 不跑。>=2 才会触发
+    stability: 0

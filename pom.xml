@@ -246,6 +246,13 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- ArchUnit：包依赖方向守护测试，防止循环依赖回潮 -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>1.3.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -330,4 +337,19 @@
             </snapshots>
         </repository>
     </repositories>
+
+    <profiles>
+        <!--
+            离线评估 profile。
+            用法： mvn spring-boot:run -Peval
+            含稳定性测试（连跑 5 次）： 加 -Dspring-boot.run.arguments=qian.eval.stability=5
+            详见 docs/superpowers/specs/2026-09-10-evaluation-harness-design.md
+        -->
+        <profile>
+            <id>eval</id>
+            <properties>
+                <spring-boot.run.profiles>eval</spring-boot.run.profiles>
+            </properties>
+        </profile>
+    </profiles>
 </project>
