@@ -5,6 +5,7 @@ import com.qian.qianaiagent.agent.trace.TraceStep;
 import lombok.Builder;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,6 +18,7 @@ import java.util.List;
  * 最后返回一个 {@link }，包含总分和扣分明细。
  */
 @Slf4j
+@Component
 public class DeterministicScorer {
 
     // ============================================================
@@ -56,12 +58,10 @@ public class DeterministicScorer {
     // }
     public List<String> checkToolCalls(AgentTrace trace, ExpectedBehavior expected) {
         List<String> failures = new ArrayList<>();
-
         // 1. 从 trace 筛出所有 TOOL_CALL 类型的步骤
         List<TraceStep> toolCallSteps = trace.getSteps().stream()
                 .filter(step -> "TOOL_CALL".equals(step.getStepType()))
                 .toList();
-
         // 2. 遍历期望的工具调用，检查是否有匹配的步骤
         if (expected.getExpectedToolCalls() != null) {
             for (ExpectedBehavior.ToolCallExpectation expectedCall : expected.getExpectedToolCalls()) {
@@ -81,7 +81,6 @@ public class DeterministicScorer {
                                             .contains(expectedCall.getResultContains().toLowerCase()));
                     return nameMatch && paramMatch && resultMatch;
                 });
-
                 if (!matched) {
                     failures.add("缺少工具调用: " + expectedCall.getToolName());
                 }
@@ -108,11 +107,20 @@ public class DeterministicScorer {
     public List<String> checkResponseKeywords(AgentTrace trace, ExpectedBehavior expected) {
         List<String> failures = new ArrayList<>();
 
-        // 1. 取最后一步的 resultSummary 作为 Agent 最终回答
+        // 1. 取"最后一个 LLM_CALL"的 resultSummary 作为 Agent 最终回答。
+        //    真实 Agent 轨迹末尾常有 doTerminate 的 TOOL_RESULT，那不算回答；
+        //    老式 STEP 轨迹（无 LLM_CALL）则退回取最大步号那条文本。
         String finalAnswer = trace.getSteps().stream()
+                .filter(step -> "LLM_CALL".equals(step.getStepType()))
                 .max(Comparator.comparingInt(TraceStep::getStepNumber))
                 .map(TraceStep::getResultSummary)
                 .orElse("");
+        if (finalAnswer == null || finalAnswer.isEmpty()) {
+            finalAnswer = trace.getSteps().stream()
+                    .max(Comparator.comparingInt(TraceStep::getStepNumber))
+                    .map(TraceStep::getResultSummary)
+                    .orElse("");
+        }
 
         // 2. 逐个检查关键词是否包含
         if (expected.getExpectedResponseKeywords() != null && !finalAnswer.isEmpty()) {
@@ -159,37 +167,31 @@ public class DeterministicScorer {
     public ScoreResult score(AgentTrace trace, ExpectedBehavior expected) {
         int score = 100;
         List<String> details = new ArrayList<>();
-
         // 1. 工具调用检查
         List<String> toolFailures = checkToolCalls(trace, expected);
         for (String failure : toolFailures) {
             score -= PENALTY_TOOL_CALL_MISSING;
             details.add("[-" + PENALTY_TOOL_CALL_MISSING + "] " + failure);
         }
-
         // 2. 关键词检查
         List<String> keywordFailures = checkResponseKeywords(trace, expected);
         for (String failure : keywordFailures) {
             score -= PENALTY_KEYWORD_MISSING;
             details.add("[-" + PENALTY_KEYWORD_MISSING + "] " + failure);
         }
-
         // 3. 工具调用次数检查
         String maxCallsFailure = checkMaxToolCalls(trace, expected);
         if (maxCallsFailure != null) {
             score -= PENALTY_TOO_MANY_CALLS;
             details.add("[-" + PENALTY_TOO_MANY_CALLS + "] " + maxCallsFailure);
         }
-
         // 分数不低于 0
         score = Math.max(0, score);
-
         return ScoreResult.builder()
                 .score(score)
                 .deductions(details)
                 .build();
     }
-
     // ============================================================
     // 内部类：评分结果
     // ============================================================
