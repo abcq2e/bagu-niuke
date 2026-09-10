@@ -20,7 +20,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import com.qian.qianaiagent.interview.QuizApp;
 
 /**
  * 抽象基础代理类，用于管理代理状态和执行流程。
@@ -53,6 +52,10 @@ public abstract class BaseAgent {
     // Memory 记忆（需要自主维护会话上下文）
     private List<Message> messageList = new ArrayList<>();
 
+    // 当前这次执行的轨迹（run()/runStream() 赋值）。提升为成员而非局部变量，
+    // 是为了让子类在 step() 内部能够追加"细粒度"轨迹步骤（LLM_CALL/TOOL_CALL/TOOL_RESULT）。
+    private AgentTrace currentTrace;
+
     /**
      * 运行代理
      *
@@ -77,7 +80,7 @@ public abstract class BaseAgent {
             // ============================================================
             // 🧠 任务 3：初始化 AgentTrace —— 在 try 块开始处创建
             // ============================================================
-            AgentTrace trace = AgentTrace.builder()
+            this.currentTrace = AgentTrace.builder()
                     .agentName(this.name)
                     .startTime(LocalDateTime.now())
                     .steps(new ArrayList<>())
@@ -92,18 +95,22 @@ public abstract class BaseAgent {
                 // 单步执行
                 String stepResult = step();
                 long stepDuration = System.currentTimeMillis() - stepStart;
-                // 构建这一步的 TraceStep
-                TraceStep traceStep = TraceStep.builder()
-                        .stepNumber(stepNumber)
-                        .stepType("STEP")
-                        .whatHappened(stepResult)
-                        .timestamp(LocalDateTime.now())
-                        .durationMs(stepDuration)
-                        .resultSummary(stepResult.length() > 200
-                                ? stepResult.substring(0, 200) + "..."
-                                : stepResult)
-                        .build();
-                trace.getSteps().add(traceStep);
+                // 细粒度 Agent（ToolCallAgent）在 step() 内已自行记录真实事件，
+                // 这里只对"粗粒度 Agent"保留一条 STEP 兜底，避免轨迹混入噪音。
+                if (!shouldRecordFineGrainedTrace()) {
+                    // 构建这一步的 TraceStep
+                    TraceStep traceStep = TraceStep.builder()
+                            .stepNumber(stepNumber)
+                            .stepType("STEP")
+                            .whatHappened(stepResult)
+                            .timestamp(LocalDateTime.now())
+                            .durationMs(stepDuration)
+                            .resultSummary(stepResult.length() > 200
+                                    ? stepResult.substring(0, 200) + "..."
+                                    : stepResult)
+                            .build();
+                    this.currentTrace.getSteps().add(traceStep);
+                }
 
                 String result = "Step " + stepNumber + ": " + stepResult;
                 results.add(result);
@@ -111,9 +118,9 @@ public abstract class BaseAgent {
             // ============================================================
             // 🧠 任务 3：循环结束后，封口 AgentTrace 并打印 JSON 日志
             // ============================================================
-            trace.setEndTime(LocalDateTime.now());
-            trace.setFinalState(state.name());
-            String traceJson = JSONUtil.toJsonPrettyStr(trace);
+            this.currentTrace.setEndTime(LocalDateTime.now());
+            this.currentTrace.setFinalState(state.name());
+            String traceJson = JSONUtil.toJsonPrettyStr(this.currentTrace);
             log.info("Agent Trace:\n{}", traceJson);
 
             // ============================================================
@@ -183,7 +190,7 @@ public abstract class BaseAgent {
             messageList.add(new UserMessage(userPrompt));
             try {
                 // AgentTrace 初始化
-                AgentTrace trace = AgentTrace.builder()
+                this.currentTrace = AgentTrace.builder()
                         .agentName(this.name)
                         .startTime(LocalDateTime.now())
                         .steps(new ArrayList<>())
@@ -197,18 +204,20 @@ public abstract class BaseAgent {
                     long stepStart = System.currentTimeMillis();
                     String stepResult = step();
                     long stepDuration = System.currentTimeMillis() - stepStart;
-                    // 记录 TraceStep
-                    TraceStep traceStep = TraceStep.builder()
-                            .stepNumber(stepNumber)
-                            .stepType("STEP")
-                            .whatHappened(stepResult)
-                            .timestamp(LocalDateTime.now())
-                            .durationMs(stepDuration)
-                            .resultSummary(stepResult.length() > 200
-                                    ? stepResult.substring(0, 200) + "..."
-                                    : stepResult)
-                            .build();
-                    trace.getSteps().add(traceStep);
+                    if (!shouldRecordFineGrainedTrace()) {
+                        // 记录 TraceStep
+                        TraceStep traceStep = TraceStep.builder()
+                                .stepNumber(stepNumber)
+                                .stepType("STEP")
+                                .whatHappened(stepResult)
+                                .timestamp(LocalDateTime.now())
+                                .durationMs(stepDuration)
+                                .resultSummary(stepResult.length() > 200
+                                        ? stepResult.substring(0, 200) + "..."
+                                        : stepResult)
+                                .build();
+                        this.currentTrace.getSteps().add(traceStep);
+                    }
                     // 输出当前每一步的结果到 SSE（stepResult 自带 💬/✅ 等标识，无需再加 "Step N:" 前缀）
                     sseEmitter.send(stepResult);
                 }
@@ -218,9 +227,9 @@ public abstract class BaseAgent {
                     sseEmitter.send("执行结束：达到最大步骤（" + maxSteps + "）");
                 }
                 // 封口 Trace
-                trace.setEndTime(LocalDateTime.now());
-                trace.setFinalState(state.name());
-                String traceJson = JSONUtil.toJsonPrettyStr(trace);
+                this.currentTrace.setEndTime(LocalDateTime.now());
+                this.currentTrace.setFinalState(state.name());
+                String traceJson = JSONUtil.toJsonPrettyStr(this.currentTrace);
                 log.info("Agent Trace:\n{}", traceJson);
                 // 保存 Trace 文件
                 saveTraceToFile(traceJson);
@@ -267,6 +276,50 @@ public abstract class BaseAgent {
      */
     public abstract String step();
 
+    // ============================================================
+    // 🧠 细粒度轨迹支持：让 ReAct/ToolCall 类 Agent 记录真实事件
+    // ============================================================
+
+    /**
+     * 该 Agent 是否由自身记录"细粒度轨迹"（LLM_CALL/TOOL_CALL/TOOL_RESULT）。
+     *
+     * <p>默认 false → {@link #run(String)} 沿用旧的"每轮一条粗粒度 STEP"轨迹，行为不变。
+     * 细粒度 Agent（如 ToolCallAgent）覆写为 true，自行在 think()/act() 中调用
+     * {@link #recordTraceStep} 记录真实事件，run() 就不再追加粗粒度 STEP，避免轨迹混入噪音。
+     */
+    protected boolean shouldRecordFineGrainedTrace() {
+        return false;
+    }
+
+    /**
+     * 往当前轨迹里追加一条步骤（供子类在 step() 内记录细粒度事件）。
+     *
+     * @param stepType     步骤类型：LLM_CALL / TOOL_CALL / TOOL_RESULT
+     * @param whatHappened 这步做了什么（人话描述）
+     * @param resultSummary 结果摘要（自动截断到 200 字符）
+     * @param toolName     工具名（仅 TOOL_CALL/TOOL_RESULT 有值）
+     * @param toolInput    工具入参 JSON（仅 TOOL_CALL 有值）
+     */
+    //Trace步骤的链路追踪，追加步骤
+    protected void recordTraceStep(String stepType, String whatHappened, String resultSummary,
+                                   String toolName, String toolInput) {
+        if (currentTrace == null) {
+            return;
+        }
+        String safeSummary = resultSummary == null ? null
+                : (resultSummary.length() > 200 ? resultSummary.substring(0, 200) + "..." : resultSummary);
+        TraceStep traceStep = TraceStep.builder()
+                .stepNumber(currentTrace.getSteps().size() + 1)
+                .stepType(stepType)
+                .whatHappened(whatHappened)
+                .timestamp(LocalDateTime.now())
+                .resultSummary(safeSummary)
+                .toolName(toolName)
+                .toolInput(toolInput)
+                .build();
+        currentTrace.getSteps().add(traceStep);
+    }
+    //保存文件
     /** 保存 Trace 到文件（run() 和 runStream() 共用） */
     private void saveTraceToFile(String traceJson) {
         try {
@@ -283,6 +336,15 @@ public abstract class BaseAgent {
         } catch (IOException e) {
             log.error("保存 Trace 文件失败", e);
         }
+    }
+
+    /**
+     * 当前这次执行的轨迹（{@link #run(String)} / {@link #runStream(String)} 执行期间赋值）。
+     * <p>评估链路直接取此引用，避免扫 logs/traces 目录取"最新文件"——
+     * 多用例连续跑或并发时会读到上一次的轨迹。
+     */
+    public AgentTrace getCurrentTrace() {
+        return currentTrace;
     }
 
     /**
