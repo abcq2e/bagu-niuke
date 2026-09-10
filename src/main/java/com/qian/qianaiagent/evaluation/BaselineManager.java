@@ -2,9 +2,12 @@ package com.qian.qianaiagent.evaluation;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
@@ -49,6 +52,7 @@ import java.util.stream.Stream;
  * </ul>
  */
 @Slf4j
+@Component
 public class BaselineManager {
 
     /** 基线文件存储目录 */
@@ -109,7 +113,8 @@ public class BaselineManager {
     public Baseline loadBaseline(String caseName) {
         Path filePath = toFilePath(caseName);
         if (!Files.exists(filePath)) {
-            log.warn("基线文件不存在: {}", filePath);
+            // 探测不存在的基线现在是正常流程的一部分（判断是否首次运行），不该刷 warn
+            log.debug("基线文件不存在: {}", filePath);
             return null;
         }
         try {
@@ -172,11 +177,17 @@ public class BaselineManager {
     public ComparisonReport compareWithBaseline(String caseName, EvaluationResult newResult) {
         Baseline baseline = loadBaseline(caseName);
         if (baseline == null) {
+            // 用例文件不存在 —— 离线跑分的用例集就来自 baselines 目录，
+            // 文件缺失说明用例名写错了，报错而非凭空造一个丢掉 query/expectedBehavior 的空壳
             return ComparisonReport.builder()
                     .caseName(caseName)
                     .hasBaseline(false)
-                    .summary("⚠️ 没有基线数据，无法对比。请先建立基线。")
+                    .summary("⚠️ 用例文件不存在: " + caseName)
                     .build();
+        }
+        if (baseline.getBaselineDeterministicScore() < 0) {
+            // -1 哨兵 = 尚未建立基线 → 用本次结果自动建立（金文件测试的通行做法）
+            return autoEstablishBaseline(baseline, newResult);
         }
 
         int deltaDeterministic = newResult.getDeterministicScore() - baseline.getBaselineDeterministicScore();
@@ -204,6 +215,33 @@ public class BaselineManager {
                 .build();
     }
 
+    /**
+     * 用本次评分结果自动建立基线。
+     *
+     * <p>仅在用例文件已存在、且分数为 -1 哨兵时调用。原地更新分数与备注，
+     * 保留文件里的 query / expectedBehavior 等用例定义不动。
+     */
+    private ComparisonReport autoEstablishBaseline(Baseline baseline, EvaluationResult newResult) {
+        baseline.setBaselineDeterministicScore(newResult.getDeterministicScore());
+        baseline.setBaselineRubricScore(newResult.getRubricScore());
+        baseline.setCreatedAt(LocalDateTime.now());
+        baseline.setNotes("🆕 自动建立于 " + LocalDateTime.now()
+                + "（首次运行结果，未经人工确认；下次运行起开始对比）");
+        saveBaseline(baseline);
+
+        log.info("🆕 用例 [{}] 无基线，已用本次结果自动建立: 确定性={}, Rubric={}",
+                baseline.getCaseName(), newResult.getDeterministicScore(), newResult.getRubricScore());
+
+        return ComparisonReport.builder()
+                .caseName(baseline.getCaseName())
+                .hasBaseline(false)
+                .newBaseline(true)
+                .newDeterministicScore(newResult.getDeterministicScore())
+                .newRubricScore(newResult.getRubricScore())
+                .summary("🆕 已自动建立基线")
+                .build();
+    }
+
     // ============================================================
     // 工具方法
     // ============================================================
@@ -224,6 +262,8 @@ public class BaselineManager {
      */
     @Data
     @Builder
+    @NoArgsConstructor   // 供 Jackson 从 evaluation/baselines/*.json 反序列化
+    @AllArgsConstructor  // 与 @NoArgsConstructor 同时存在时，@Builder 需要显式全参构造器
     public static class Baseline {
         /** 用例名称 */
         private String caseName;
@@ -256,6 +296,8 @@ public class BaselineManager {
     public static class ComparisonReport {
         private String caseName;
         private boolean hasBaseline;
+        /** true = 本次运行刚建立基线（此前是 -1 哨兵），尚未与任何历史对比 */
+        private boolean newBaseline;
         private int deltaDeterministic;
         private int deltaRubric;
         private int baselineDeterministicScore;

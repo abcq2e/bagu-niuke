@@ -1,7 +1,9 @@
 package com.qian.qianaiagent.evaluation;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +25,8 @@ import java.util.List;
  */
 @Data
 @Builder
+@NoArgsConstructor   // 供 Jackson 从 evaluation/baselines/*.json 反序列化
+@AllArgsConstructor  // 与 @NoArgsConstructor 同时存在时，@Builder 需要显式全参构造器
 public class ExpectedBehavior {
 
     // ============================================================
@@ -72,6 +76,8 @@ public class ExpectedBehavior {
     //
     @Data
     @Builder
+    @NoArgsConstructor   // 供 Jackson 从 evaluation/baselines/*.json 反序列化
+    @AllArgsConstructor  // 与 @NoArgsConstructor 同时存在时，@Builder 需要显式全参构造器
     //单条工具调用期望
     public static  class ToolCallExpectation {
         private String toolName;
