@@ -1,8 +1,10 @@
 package com.qian.qianaiagent.util;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -56,15 +58,39 @@ class SafePathResolverTest {
 
     @Test
     void rejectsSymlinkEscapingBase() throws Exception {
-        // 符号链接指向目录外 —— 规范化的字符串前缀检查挡不住，必须靠 toRealPath
         Path outside = Files.createTempDirectory("outside");
+        // 🔴 必须让目标真实存在：悬空链接会被 Files.exists 跟随判定为 false，
+        //    防护被跳过，测试就变成「断言从未执行」的假绿
+        Path victim = Files.writeString(outside.resolve("victim.txt"), "secret");
         Path link = base.resolve("link.txt");
         try {
-            Files.createSymbolicLink(link, outside.resolve("victim.txt"));
-        } catch (UnsupportedOperationException | java.io.IOException e) {
-            return;     // Windows 无权限时跳过，不误报失败
+            Files.createSymbolicLink(link, victim);
+        } catch (UnsupportedOperationException | IOException e) {
+            // 本机无权限（Windows 未开开发者模式）—— 显式 skip，不伪装成通过
+            Assumptions.assumeTrue(false, "本机无法创建符号链接，跳过: " + e.getMessage());
         }
         assertThrows(IllegalArgumentException.class,
                 () -> SafePathResolver.resolveWithin(base, "link.txt"));
+    }
+
+    @Test
+    void rejectsDanglingSymlink() throws Exception {
+        // 悬空链接：往它写入会在目录外创建文件，必须拒绝
+        Path outside = Files.createTempDirectory("outside");
+        Path link = base.resolve("dangling.txt");
+        try {
+            Files.createSymbolicLink(link, outside.resolve("never-created.txt"));
+        } catch (UnsupportedOperationException | IOException e) {
+            Assumptions.assumeTrue(false, "本机无法创建符号链接，跳过: " + e.getMessage());
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> SafePathResolver.resolveWithin(base, "dangling.txt"));
+    }
+
+    @Test
+    void acceptsDotsInsideFileName() {
+        // a..b.txt 是合法文件名，不能因为字符串含 .. 就误拒
+        Path resolved = SafePathResolver.resolveWithin(base, "a..b.txt");
+        assertEquals("a..b.txt", resolved.getFileName().toString());
     }
 }

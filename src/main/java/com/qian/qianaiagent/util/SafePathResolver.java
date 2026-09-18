@@ -2,6 +2,8 @@ package com.qian.qianaiagent.util;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 
 /**
@@ -14,9 +16,11 @@ import java.nio.file.Path;
  *
  * <h2>三层防护</h2>
  * <ol>
- *   <li>拒绝 {@code ..} 与绝对路径（字符层面，挡住绝大多数尝试）</li>
+ *   <li>拒绝 {@code ..} 路径段与绝对路径（按段判定，{@code a..b.txt} 这类合法名不受影响）</li>
  *   <li>{@code normalize()} 后做前缀检查（挡住 {@code a/../../x} 这类嵌套）</li>
- *   <li>目标已存在时用 {@code toRealPath()} 再查一次（挡住符号链接逃逸）</li>
+ *   <li>用 {@code NOFOLLOW_LINKS} 检测链接「本身」是否存在，存在则 {@code toRealPath()} 再查一次
+ *       （挡住符号链接逃逸）；注意悬空链接本身存在但跟随判定为 false，必须按链接本身判定，
+ *       且 {@code toRealPath()} 无法解析时保守拒绝，不静默放行</li>
  * </ol>
  */
 public final class SafePathResolver {
@@ -34,27 +38,41 @@ public final class SafePathResolver {
         if (userPath == null || userPath.isBlank()) {
             throw new IllegalArgumentException("路径不能为空");
         }
-        if (userPath.contains("..")) {
-            throw new IllegalArgumentException("路径不能包含 ..: " + userPath);
+
+        Path candidate;
+        try {
+            candidate = Path.of(userPath);
+        } catch (InvalidPathException e) {
+            throw new IllegalArgumentException("路径无法解析: " + userPath);
         }
-        if (Path.of(userPath).isAbsolute()) {
+        if (candidate.isAbsolute()) {
             throw new IllegalArgumentException("不允许绝对路径: " + userPath);
+        }
+        // 🔴 按「路径段」判定 ..，而非字符串包含 —— 否则合法的 a..b.txt 会被误拒
+        for (Path segment : candidate) {
+            if ("..".equals(segment.toString())) {
+                throw new IllegalArgumentException("路径不能包含 .. 段: " + userPath);
+            }
         }
 
         Path normalizedBase = realBase(baseDir);
-        Path resolved = normalizedBase.resolve(userPath).normalize();
+        Path resolved = normalizedBase.resolve(candidate).normalize();
         if (!resolved.startsWith(normalizedBase)) {
             throw new IllegalArgumentException("路径越界: " + userPath);
         }
 
-        // 目标已存在时再做一次符号链接解析 —— 字符串前缀检查对 link -> 目录外 无效
-        if (Files.exists(resolved)) {
+        // 🔴 NOFOLLOW_LINKS：悬空符号链接「本身存在」但跟随判定为 false，
+        //    若跟随判定就会漏过它 —— 而往悬空链接写入会在目录外真实创建文件
+        if (Files.exists(resolved, LinkOption.NOFOLLOW_LINKS)) {
+            Path real;
             try {
-                if (!resolved.toRealPath().startsWith(normalizedBase)) {
-                    throw new IllegalArgumentException("路径经由符号链接越界: " + userPath);
-                }
+                real = resolved.toRealPath();
             } catch (IOException e) {
-                // 解析失败：退回上面的规范化结果，它在字符层面已确认安全
+                // 悬空链接或无法解析 —— 保守拒绝，不猜
+                throw new IllegalArgumentException("路径无法解析（可能是悬空符号链接）: " + userPath);
+            }
+            if (!real.startsWith(normalizedBase)) {
+                throw new IllegalArgumentException("路径经由符号链接越界: " + userPath);
             }
         }
         return resolved;
