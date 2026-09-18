@@ -30,7 +30,6 @@ public class SummarizingChatMemory implements ChatMemory {
      * 最大保留的消息条数（20 条 = 约 10 轮对话，给面试点评提供充足上下文）
      */
     private static final int DEFAULT_MAX_MESSAGES = 20;
-
     private final FileBasedChatMemory delegate;
     private final ConversationSummarizer summarizer;
     private final int maxMessages;
@@ -40,11 +39,9 @@ public class SummarizingChatMemory implements ChatMemory {
      * 新消息到达（add）时作废对应缓存
      */
     private final Map<String, CachedSummary> summaryCache = new ConcurrentHashMap<>();
-
     public SummarizingChatMemory(FileBasedChatMemory delegate, ConversationSummarizer summarizer) {
         this(delegate, summarizer, DEFAULT_MAX_MESSAGES);
     }
-
     public SummarizingChatMemory(FileBasedChatMemory delegate, ConversationSummarizer summarizer,
                                   int maxMessages) {
         this.delegate = delegate;
@@ -53,7 +50,6 @@ public class SummarizingChatMemory implements ChatMemory {
         log.info("SummarizingChatMemory 初始化完成，窗口大小: {} 条消息（约 {} 轮）",
                 maxMessages, maxMessages / 2);
     }
-
     /**
      * 获取窗口化的对话历史 —— 超过阈值时返回 [受保护消息] + [摘要] + [最近 N 条原文]。
      * <p>
@@ -71,15 +67,12 @@ public class SummarizingChatMemory implements ChatMemory {
                     conversationId, cached.summary.length());
             return buildResult(cached.summary, cached.recentMessages);
         }
-
-        // 🔴 保护【方向切换】消息不被摘要
+        // 🔴 保护【方向切换】消息不被摘要（判定与 FileBasedChatMemory 共用同一份）
         List<Message> protectedMsgs = new ArrayList<>();
         int firstUnprotected = 0;
         for (int i = 0; i < all.size(); i++) {
-            Message msg = all.get(i);
-            String text = msg.getText();
-            if (text != null && text.contains("【方向切换】")) {
-                protectedMsgs.add(msg);
+            if (ProtectedMessages.isProtected(all.get(i))) {
+                protectedMsgs.add(all.get(i));
                 firstUnprotected = i + 1;
             } else {
                 break; // 只在开头连续查找，遇到非保护消息就停止
@@ -93,7 +86,6 @@ public class SummarizingChatMemory implements ChatMemory {
             result.addAll(rest);
             return result;
         }
-
         int summaryCount = rest.size() - effectiveMax;
         List<Message> toSummarize = rest.subList(0, summaryCount);
         List<Message> recent = new ArrayList<>(rest.subList(summaryCount, rest.size()));
@@ -137,10 +129,27 @@ public class SummarizingChatMemory implements ChatMemory {
     }
 
     /**
-     * 列出所有会话概览
+     * 列出会话概览（当前用户自己的 + 无主的）
+     *
+     * @param userId 当前登录用户，用于归属过滤；列表接口不会认领无主会话
      */
-    public List<FileBasedChatMemory.ConversationInfo> listConversations() {
-        return delegate.listConversations();
+    public List<FileBasedChatMemory.ConversationInfo> listConversations(Long userId) {
+        return delegate.listConversations(userId);
+    }
+
+    /** 建立/继续可写会话（转发给底层做归属判定） */
+    public boolean startSession(String chatId, Long userId) {
+        return delegate.startSession(chatId, userId);
+    }
+
+    /** 打开既有会话（转发给底层做归属判定 + 首次访问认领） */
+    public boolean accessConversation(String chatId, Long userId) {
+        return delegate.accessConversation(chatId, userId);
+    }
+
+    /** 严格归属判定（删除/重命名/导出等破坏性操作） */
+    public boolean canManage(String chatId, Long userId) {
+        return delegate.canManage(chatId, userId);
     }
 
     /**
