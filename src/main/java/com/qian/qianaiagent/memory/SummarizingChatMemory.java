@@ -6,6 +6,7 @@ import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -30,9 +31,34 @@ public class SummarizingChatMemory implements ChatMemory {
      * 最大保留的消息条数（20 条 = 约 10 轮对话，给面试点评提供充足上下文）
      */
     private static final int DEFAULT_MAX_MESSAGES = 20;
+
+    /**
+     * 默认 token 预算。条数阈值拦不住「少条数、超长文本」（例如一条 8000 字的 RAG 检索结果）
+     */
+    private static final int DEFAULT_MAX_TOKENS = 8000;
+
+    /** 中文约 1.5 字/token 的折中估计；不引入 tokenizer 库，避免虚假的精确感。 */
+    private static final double CHARS_PER_TOKEN = 1.5;
+    /** 安全余量：宁可估多，不可估少。 */
+    private static final double SAFETY_FACTOR = 1.3;
+
     private final FileBasedChatMemory delegate;
     private final ConversationSummarizer summarizer;
     private final int maxMessages;
+    private final int maxTokens;
+
+    /**
+     * 估算一段文本占用的 token 数。
+     * <p>
+     * 用字符启发式而非真实 tokenizer：DeepSeek 的 tokenizer 非公开稳定，
+     * 引入 jtokkit 之类只会给出一个看似精确、实则同样偏差的数字。
+     */
+    static int estimateTokens(String text) {
+        if (text == null || text.isEmpty()) {
+            return 0;
+        }
+        return (int) Math.ceil(text.length() / CHARS_PER_TOKEN * SAFETY_FACTOR);
+    }
 
     /**
      * 摘要缓存 —— key = conversationId，value = 上次计算的摘要结果
@@ -40,27 +66,44 @@ public class SummarizingChatMemory implements ChatMemory {
      */
     private final Map<String, CachedSummary> summaryCache = new ConcurrentHashMap<>();
     public SummarizingChatMemory(FileBasedChatMemory delegate, ConversationSummarizer summarizer) {
-        this(delegate, summarizer, DEFAULT_MAX_MESSAGES);
+        this(delegate, summarizer, DEFAULT_MAX_MESSAGES, DEFAULT_MAX_TOKENS);
     }
     public SummarizingChatMemory(FileBasedChatMemory delegate, ConversationSummarizer summarizer,
                                   int maxMessages) {
+        this(delegate, summarizer, maxMessages, DEFAULT_MAX_TOKENS);
+    }
+    public SummarizingChatMemory(FileBasedChatMemory delegate, ConversationSummarizer summarizer,
+                                  int maxMessages, int maxTokens) {
         this.delegate = delegate;
         this.summarizer = summarizer;
         this.maxMessages = maxMessages;
-        log.info("SummarizingChatMemory 初始化完成，窗口大小: {} 条消息（约 {} 轮）",
-                maxMessages, maxMessages / 2);
+        this.maxTokens = maxTokens;
+        log.info("SummarizingChatMemory 初始化完成，窗口: {} 条消息 / {} token",
+                maxMessages, maxTokens > 0 ? maxTokens : "不限");
     }
+
     /**
-     * 获取窗口化的对话历史 —— 超过阈值时返回 [受保护消息] + [摘要] + [最近 N 条原文]。
+     * 获取窗口化的对话历史 —— 超过阈值时返回 [受保护消息] + [摘要] + [最近 N 条原文]，
+     * 最后再按 token 预算裁剪。
      * <p>
-     * 🔴 包含【方向切换】的 SystemMessage 永远不被摘要，始终保留。
+     * 🔴 包含【方向切换】的 SystemMessage 永远不被摘要、也不被裁剪，始终保留。
      */
     @Override
     public List<Message> get(String conversationId) {
         List<Message> all = delegate.get(conversationId);
-        if (all.isEmpty() || all.size() <= maxMessages) {
+        if (all.isEmpty()) {
             return all;
         }
+        // 先按条数取窗口，再按 token 裁剪 —— 顺序不能反：
+        // 原实现在条数未超时直接 return，会整个绕过 token 预算
+        List<Message> windowed = all.size() <= maxMessages
+                ? new ArrayList<>(all)
+                : windowWithSummary(conversationId, all);
+        return trimToTokenBudget(windowed);
+    }
+
+    /** 按条数取窗口：超阈值时 [受保护消息] + [摘要] + [最近 N 条原文]。 */
+    private List<Message> windowWithSummary(String conversationId, List<Message> all) {
         CachedSummary cached = summaryCache.get(conversationId);
         if (cached != null && cached.totalMessageCount == all.size()) {
             log.debug("使用缓存的对话摘要: chatId={}, summaryLen={}",
@@ -98,6 +141,37 @@ public class SummarizingChatMemory implements ChatMemory {
         List<Message> result = new ArrayList<>(protectedMsgs);
         result.addAll(buildResult(summary, recent));
         return result;
+    }
+
+    /**
+     * 按 token 预算裁剪：从最新往旧累加，超预算的普通消息丢弃。
+     * <p>
+     * 🔴 受保护消息不计入丢弃 —— 但也不 break，因为锚点通常在最早处，
+     * break 会让它第一个被丢掉，正好与保护意图相反。
+     */
+    private List<Message> trimToTokenBudget(List<Message> messages) {
+        if (maxTokens <= 0) {
+            return messages;
+        }
+        int total = messages.stream().mapToInt(m -> estimateTokens(m.getText())).sum();
+        if (total <= maxTokens) {
+            return messages;
+        }
+
+        List<Message> kept = new ArrayList<>();
+        int used = 0;
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message m = messages.get(i);
+            if (!ProtectedMessages.isProtected(m) && used + estimateTokens(m.getText()) > maxTokens) {
+                continue;
+            }
+            kept.add(m);
+            used += estimateTokens(m.getText());
+        }
+        Collections.reverse(kept);
+        log.info("token 预算裁剪: {} 条 → {} 条（预算 {} token，实际约 {}）",
+                messages.size(), kept.size(), maxTokens, used);
+        return kept;
     }
 
     @Override
