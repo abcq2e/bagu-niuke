@@ -64,6 +64,18 @@ spring:
         distance-type: COSINE_DISTANCE
         max-document-batch-size: 10000
         initialize-schema: true
+    # ===== MCP Client：把外部 MCP Server 的工具并进 Agent 工具集 =====
+    # stdio 模式下 Spring AI 会按 mcp-servers.json 自动拉起 Server 子进程，无需手工启动
+    # 不启用 MCP 时把 enabled 改成 false 即可，ToolRegistration 会自动跳过合并
+    mcp:
+      client:
+        enabled: true
+        name: qian-ai-agent
+        version: 0.0.1
+        type: SYNC
+        request-timeout: 60s
+        stdio:
+          servers-configuration: classpath:mcp-servers.json
 
 # PGVector 专属数据源配置
 pgvector:

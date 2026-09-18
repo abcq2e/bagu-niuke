@@ -27,6 +27,9 @@ import java.util.stream.Collectors;
  *   → 职责分离：计算方法只关心"输入→分数"，组装 Result 是调用方的事。
  * </pre>
  */
+
+
+//上下文准确率，上下文召回率，忠实度，答案相关性;  RAG的检测四大评估标准
 @Service
 @Slf4j
 public class RagasEvaluator {
@@ -36,29 +39,7 @@ public class RagasEvaluator {
 
     @Resource
     private EmbeddingModel primaryEmbeddingModel;
-    // ================================================================
     // 指标 1：Context Precision（上下文精确率）
-    // ================================================================
-    // 问题：检索到的文档中，相关的排在前面了吗？
-    //
-    // 算法步骤：
-    //   Step 1: 遍历检索结果列表（按分数从高到低排序）
-    //   Step 2: 对每个位置 K，判断前 K 个文档中有几个与 query 相关
-    //   Step 3: 计算 precision@k = 前K个中相关的数量 / K
-    //   Step 4: 对所有 K 的 precision@k 加权平均
-    //
-    // 关键设计决策 —— 怎么判断"相关"？
-    //   - 方案A（简单）：关键词匹配。统计 query 中的词在文档中出现的比例
-    //   - 方案B（精确）：用 LLM 判断。Prompt: "文档是否与问题相关？只答 YES/NO"
-    //
-    // 关键设计决策 —— 权重函数怎么设计？
-    //   - 排在越前面的文档权重应该越大（因为用户先看到前面的）
-    //   - 常见做法：weight_k = 1/k 或 1/log(k+1)
-    //   - 最后归一化让所有 weight 加起来等于 1
-    //
-    // 💡 建议：先用方案A跑通流程，再替换为方案B
-    // ================================================================
-
     /**
      * 计算 Context Precision
      *
@@ -71,30 +52,6 @@ public class RagasEvaluator {
             log.warn("文档列表为空，Context Precision 返回 0");
             return 0.0;
         }
-        // 🔴 你的任务：实现 Context Precision 算法
-        // ============================================================
-        // Step 1: 对每个文档判断是否相关 → boolean[] relevant
-        //         提示：先用关键词匹配（方案A），后面可以替换成 isRelevantByLLM()
-        // Step 2: 计算每个位置 K 的 precision@k
-        //         precisionAtK = 前K个中相关的数量 / K
-        // Step 3: 加权平均
-        //         方案1（推荐）：weight_k = 1/k，然后归一化
-        //         方案2：直接用 precision@N（只看最后一个位置）
-        // Step 4: 返回最终分数
-        //
-        // 伪代码：
-        // double weightedSum = 0;
-        // double weightSum = 0;
-        // int relevantCount = 0;
-        // for (int k = 1; k <= documents.size(); k++) {
-        //     if (isRelevant(query, documents.get(k-1))) relevantCount++;
-        //     double precisionAtK = (double) relevantCount / k;
-        //     double weight = 1.0 / k;  // 排名靠前权重更大
-        //     weightedSum += precisionAtK * weight;
-        //     weightSum += weight;
-        // }
-        // return weightedSum / weightSum;
-        // ============================================================
         double weightedSum = 0;
         double weightSum = 0;
         int relevantCount = 0;
@@ -106,9 +63,6 @@ public class RagasEvaluator {
             weightSum += weight;
         }
         return weightedSum / weightSum;
-        //这里算的是加权平均值，可以看看其定义
-        // TODO: 实现 Context Precision 计算
-        //throw new UnsupportedOperationException("TODO: 实现 Context Precision");
     }
     // ================================================================
     // 指标 2：Context Recall（上下文召回率）
@@ -141,19 +95,16 @@ public class RagasEvaluator {
         if (documents == null || documents.isEmpty()) {
             return 0.0;
         }
-
         // Step 1: 提取参考答案中的原子声明
         List<String> claims = extractClaims(referenceAnswer);
         if (claims.isEmpty()) {
             log.warn("未能从参考答案中提取到声明，Context Recall 返回 0");
             return 0.0;
         }
-
         // Step 2: 拼接所有检索文档为上下文
         String context = documents.stream()
                 .map(Document::getText)
                 .collect(Collectors.joining("\n"));
-
         // Step 3: 逐条验证每个声明是否被上下文支持
         int supportedCount = 0;
         for (String claim : claims) {
@@ -198,27 +149,6 @@ public class RagasEvaluator {
             return 0.0;
         }
 
-        // ============================================================
-        // 🔴 你的任务（核心）：实现 Faithfulness 算法
-        // ============================================================
-        //
-        // Step 1: 从生成答案中提取 claims → extractClaims(generatedAnswer)
-        //
-        // Step 2: 拼接上下文
-        //         String context = documents.stream()
-        //             .map(Document::getText)
-        //             .collect(Collectors.joining("\n"));
-        //
-        // Step 3: 逐条验证每个 claim → verifyClaimByContext(claim, context)
-        //
-        // Step 4: 计算比例
-        //
-        // 💡 关键优化思考：
-        //   - 一次 LLM 调用验证所有 claims vs 逐条调用？哪个更省？
-        //     答案：批量验证（一次调用处理所有 claims）更省 token，
-        //     但可能降低准确度。建议先逐条验证保证质量。
-        //   - 如果 claim 数量很多（>10），可以分批验证
-        // ============================================================
         List<String> claims = extractClaims(generatedAnswer);
         if (claims.isEmpty()) {
             log.warn("答案的忠实度第，Faithfulness 返回 0");
@@ -479,21 +409,17 @@ public class RagasEvaluator {
      */
     private boolean isRelevantByKeyword(String query, String content, double threshold) {
         if (query == null || content == null) return false;
-
         String lowerQuery = query.toLowerCase();
         String lowerContent = content.toLowerCase();
-
         // 简单分词（按空格和标点分割）
         String[] words = lowerQuery.split("[\\s，。！？、；：\"'（）\\[\\]【】,.!?;:'\"()\\[\\]{}]+");
         if (words.length == 0) return false;
-
         int hitCount = 0;
         for (String word : words) {
             if (word.length() >= 2 && lowerContent.contains(word)) {  // 忽略单字词
                 hitCount++;
             }
         }
-
         double ratio = (double) hitCount / words.length;
         return ratio >= threshold;
     }

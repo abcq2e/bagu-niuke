@@ -22,6 +22,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import com.qian.qianaiagent.ability.UserAbilityService;
+import com.qian.qianaiagent.evaluation.EvaluationRecorder;
 import com.qian.qianaiagent.interview.progress.ActiveSpecManager;
 import com.qian.qianaiagent.interview.progress.TopicMemoryTrimmer;
 import com.qian.qianaiagent.interview.rotation.SequentialRotationService;
@@ -71,6 +72,8 @@ public class QuizApp {
     @Resource
     private UserAbilityService userAbilityService;
     @Resource
+    private EvaluationRecorder evaluationRecorder;
+    @Resource
     private TopicRotationService topicRotationService;
 
     private final ChatMemory chatMemory; // 🔴 保存引用，用于持久化题目到聊天记录
@@ -89,6 +92,25 @@ public class QuizApp {
     public void init() {
 
         log.info("✅ QuizApp 初始化完成（严格顺序轮询模式）");
+    }
+
+    /**
+     * 用题目题干做单次向量检索（topK=3，阈值 0.3），供点评拼 ctx 与 RAGAS 评估共用。
+     * 检索失败返回空列表（降级为纯 LLM 点评），与改造前行为一致。
+     */
+    private List<Document> searchEvalDocs(String stem) {
+        try {
+            List<Document> docs = quizVectorStore.similaritySearch(
+                    SearchRequest.builder()
+                            .query(stem)
+                            .topK(3)
+                            .similarityThreshold(0.3)
+                            .build());
+            return docs != null ? docs : List.of();
+        } catch (Exception e) {
+            log.warn("⚠️ RAG 检索失败，降级为纯 LLM 点评: {}", e.getMessage());
+            return List.of();
+        }
     }
 
     /**
@@ -443,22 +465,14 @@ public class QuizApp {
 
             // 🔴 [RAG接入] 用待点评题目检索知识库，让 AI 的参考答案有据可依。
             // 不做查询改写（多查询扩展性价比低），直接单次检索；失败降级为纯 LLM 点评。
-            if (effectiveEvalStem != null && !effectiveEvalStem.isBlank()) {
-                try {
-                    List<Document> ragDocs = quizVectorStore.similaritySearch(
-                            SearchRequest.builder()
-                                    .query(effectiveEvalStem)
-                                    .topK(3)
-                                    .similarityThreshold(0.3)
-                                    .build());
-                    if (!ragDocs.isEmpty()) {
-                        ctx.append("\n【知识库参考】（供给出参考答案时参考，仍保持精简风格）\n");
-                        for (Document doc : ragDocs) {
-                            ctx.append("- ").append(doc.getText()).append("\n");
-                        }
-                    }
-                } catch (Exception e) {
-                    log.warn("⚠️ RAG 检索失败，降级为纯 LLM 点评: {}", e.getMessage());
+            // ragDocs 提升为外层 once-assigned 变量：既用于拼 ctx，也被 doOnComplete 的 RAGAS 评估复用，两次结果一致。
+            List<Document> ragDocs = (effectiveEvalStem != null && !effectiveEvalStem.isBlank())
+                    ? searchEvalDocs(effectiveEvalStem)
+                    : List.of();
+            if (!ragDocs.isEmpty()) {
+                ctx.append("\n【知识库参考】（供给出参考答案时参考，仍保持精简风格）\n");
+                for (Document doc : ragDocs) {
+                    ctx.append("- ").append(doc.getText()).append("\n");
                 }
             }
 
@@ -503,7 +517,9 @@ public class QuizApp {
                             }
                         }
                         // 🔴 [Bug修复] evalSameAsNew：AI失败恢复后同题双展，跳过评分
-                        if (!isFirstMessage && !evalSameAsNew && !isNextCmd && !isSkipDir && !isResetMemory) {
+                        boolean isRealAnswerTurn = !isFirstMessage && !evalSameAsNew
+                                && !isNextCmd && !isSkipDir && !isResetMemory;
+                        if (isRealAnswerTurn) {
                             userAbilityService.scoreAnswerAsync(
                                     chatId, effectiveEvalTopic, null, effectiveEvalStem, message, userId);
                         }
@@ -511,6 +527,11 @@ public class QuizApp {
                         if (!aiText.isEmpty()) {
                             lastQuestions.put(stateKey, new QuestionContext(topicSnapshot,
                                     aiText.length() > 400 ? aiText.substring(0, 400) : aiText));
+                        }
+                        // 🔴 [RAG接入] 回答完整产出后，异步做 RAGAS 评估（检索质量 + 生成忠实度）。
+                        // 失败不影响主流程；结果落盘 data/evals/{chatId}.json，可用 GET /ai/evals/{chatId} 查询。
+                        if (isRealAnswerTurn) {
+                            evaluationRecorder.submitRagEval(chatId, effectiveEvalStem, ragDocs, aiText);
                         }
                         messageCounts.merge(stateKey, 2, Integer::sum);
                         pendingEvalStemMap.remove(stateKey);

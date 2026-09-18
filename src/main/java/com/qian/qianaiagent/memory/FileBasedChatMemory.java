@@ -16,13 +16,7 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
-/**
- * 基于 JSON 文件持久化的对话记忆
- * <p>
- * 每个会话以 chatId.json 文件存储在磁盘上，
- * 服务重启后对话历史不丢失。
- * 写入前先备份，读取失败时保留原文件防止数据丢失。
- */
+
 public class FileBasedChatMemory implements ChatMemory {
 
     private static final Logger log = LoggerFactory.getLogger(FileBasedChatMemory.class);
@@ -51,14 +45,12 @@ public class FileBasedChatMemory implements ChatMemory {
     @Override
     public void add(String conversationId, List<Message> messages) {
         File file = getConversationFile(conversationId);
-        // 🔴 文件级锁：防止并发 read-modify-write 导致数据丢失
         Object lock = fileLocks.computeIfAbsent(conversationId, k -> new Object());
         synchronized (lock) {
             List<Message> existing;
             if (file.exists()) {
                 existing = readFromFile(file);
                 if (existing == null) {
-                    // 读取失败，保留原文件不覆盖
                     log.error("读取对话文件失败，跳过本次写入保护历史数据: {}", file.getPath());
                     return;
                 }

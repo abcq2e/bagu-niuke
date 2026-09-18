@@ -14,8 +14,7 @@ import java.security.MessageDigest;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-import com.qian.qianaiagent.ability.DimensionLabeler;
-import com.qian.qianaiagent.interview.rotation.SequentialRotationService;
+import com.qian.qianaiagent.catalog.DirectionCatalog;
 
 /**
  * 知识点目录：稳定 ID + 维度挂靠 + 落盘缓存。
@@ -73,7 +72,7 @@ public class KnowledgePointCatalog {
         }
         Map<String, List<StemEntry>> stems = new LinkedHashMap<>();
         StringBuilder hashInput = new StringBuilder();
-        for (String topic : SequentialRotationService.TOPIC_NAMES) {
+        for (String topic : DirectionCatalog.TOPIC_NAMES) {
             List<String> raw = documentCache.getRawQuestions(topic);
             List<StemEntry> entries = new ArrayList<>();
             for (String stem : raw) {

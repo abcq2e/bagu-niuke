@@ -205,13 +205,11 @@ public class EvaluationRecorder {
         List<EvalRecord> all = readAllRecords();
         List<EvalRecord> agentRecords = all.stream().filter(r -> "agent".equals(r.getType())).toList();
         List<EvalRecord> ragRecords = all.stream().filter(r -> "rag".equals(r.getType())).toList();
-
         TypeSummary agent = TypeSummary.builder()
                 .count(agentRecords.size())
                 .avgRubricTotal(avg(agentRecords,
                         r -> r.getRubric() == null ? null : (double) r.getRubric().getTotalScore()))
                 .build();
-
         TypeSummary rag = TypeSummary.builder()
                 .count(ragRecords.size())
                 .avgContextPrecision(avg(ragRecords,
@@ -221,7 +219,6 @@ public class EvaluationRecorder {
                 .avgAnswerRelevance(avg(ragRecords,
                         r -> r.getRagas() == null ? null : r.getRagas().getAnswerRelevance()))
                 .build();
-
         return EvalSummary.builder()
                 .totalRecords(all.size())
                 .sessions((int) all.stream()
@@ -290,7 +287,6 @@ public class EvaluationRecorder {
                 if (all.size() > MAX_RECORDS_PER_CHAT) {
                     all = new ArrayList<>(all.subList(all.size() - MAX_RECORDS_PER_CHAT, all.size()));
                 }
-                // 写 tmp 再原子替换，读者只会看到旧完整版或新完整版，不会看到半截文件
                 Path tmp = evalDir.resolve(name + ".json.tmp");
                 objectMapper.writerWithDefaultPrettyPrinter().writeValue(tmp.toFile(), all);
                 Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -361,7 +357,7 @@ public class EvaluationRecorder {
         private Double avgRubricTotal;
 
         /** 仅 rag：以下三项均为 [0,1] */
-        private Double avgContextPrecision;
+        private Double avgContextPrecision;   //上下文准确度
         private Double avgFaithfulness;
         private Double avgAnswerRelevance;
     }

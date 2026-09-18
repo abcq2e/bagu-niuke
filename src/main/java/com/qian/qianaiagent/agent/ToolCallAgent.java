@@ -26,7 +26,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import com.qian.qianaiagent.interview.QuizApp;
 
 /**
  * 处理工具调用的基础代理类，具体实现了 think 和 act 方法，可以用作创建实例的父类
@@ -75,6 +74,15 @@ public class ToolCallAgent extends ReActAgent {
     }
 
     /**
+     * 本类自行在 think()/act() 中记录细粒度轨迹（LLM_CALL/TOOL_CALL/TOOL_RESULT），
+     * 因此不再需要 BaseAgent.run() 追加粗粒度 STEP 步骤。
+     */
+    @Override
+    protected boolean shouldRecordFineGrainedTrace() {
+        return true;
+    }
+
+    /**
      * 处理当前状态并决定下一步行动（含自愈逻辑）
      *
      * @return 是否需要执行行动
@@ -113,6 +121,10 @@ public class ToolCallAgent extends ReActAgent {
                     .map(toolCall -> String.format("工具名称：%s，参数：%s", toolCall.name(), toolCall.arguments()))
                     .collect(Collectors.joining("\n"));
             log.info(toolCallInfo);
+            // 细粒度轨迹：记录本次 LLM 推理（可能是中间推理，也可能是最终回答）
+            String thinkText = (this.lastThinkText == null || this.lastThinkText.isBlank())
+                    ? "（LLM 无文本回复）" : this.lastThinkText;
+            recordTraceStep("LLM_CALL", thinkText, thinkText, null, null);
             // 如果不需要调用工具，返回 false
             if (toolCallList.isEmpty()) {
                 getMessageList().add(assistantMessage);
@@ -228,6 +240,13 @@ public class ToolCallAgent extends ReActAgent {
         if (!toolCallChatResponse.hasToolCalls()) {
             return "没有工具需要调用";
         }
+        // 细粒度轨迹：记录本次要执行的每个工具调用（名 + 入参 JSON）
+        for (var toolCall : toolCallChatResponse.getResult().getOutput().getToolCalls()) {
+            recordTraceStep("TOOL_CALL",
+                    "调用工具 " + toolCall.name(),
+                    "参数：" + (toolCall.arguments() == null ? "" : toolCall.arguments()),
+                    toolCall.name(), toolCall.arguments());
+        }
         // 调用工具
         Prompt prompt = new Prompt(getMessageList(), this.chatOptions);
         ToolExecutionResult toolExecutionResult;
@@ -260,6 +279,8 @@ public class ToolCallAgent extends ReActAgent {
         for (var response : toolResponseMessage.getResponses()) {
             String toolName = response.name();
             String responseData = response.responseData();
+            // 细粒度轨迹：记录该工具的返回结果（供事后评估/幻觉检查）
+            recordTraceStep("TOOL_RESULT", "工具 " + toolName + " 返回结果", responseData, toolName, null);
             if (isFailureResponse(responseData)) {
                 int newCount = toolFailCountMap.merge(toolName, 1, Integer::sum);
                 log.warn("{} 工具 {} 执行失败（第 {} 次）: {}",

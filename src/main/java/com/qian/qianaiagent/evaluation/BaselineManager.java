@@ -252,11 +252,6 @@ public class BaselineManager {
         String safeName = caseName.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9]", "_");
         return baselinesDir.resolve(safeName + ".json");
     }
-
-    // ============================================================
-    // 数据模型
-    // ============================================================
-
     /**
      * 基线数据 —— 一个人工确认过的"正确答案"快照。
      */

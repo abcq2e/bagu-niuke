@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+    <!--
+      stdio 模式下 stdout 被 MCP 用作 JSON-RPC 通道，任何非协议内容（日志、Banner）
+      都会让 Client 端解析失败（表现为握手超时或 -32700 Parse error）。
+      ConsoleAppender 默认写 System.out，必须显式改成 System.err。
+      注意：仅仅设置 logging.pattern.console 无效，日志内容照样会污染 stdout。
+    -->
+    <springProfile name="stdio">
+        <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+            <target>System.err</target>
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="STDERR"/>
+        </root>
+    </springProfile>
+
+    <!-- SSE / WebMVC 模式走标准输出，保持默认行为 -->
+    <springProfile name="!stdio">
+        <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+            <target>System.out</target>
+            <encoder>
+                <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="STDOUT"/>
+        </root>
+    </springProfile>
+
+</configuration>

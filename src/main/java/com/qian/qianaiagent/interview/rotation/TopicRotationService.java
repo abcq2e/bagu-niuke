@@ -14,8 +14,8 @@ import com.qian.qianaiagent.ability.DimensionClassification;
 import com.qian.qianaiagent.ability.DimensionValidator;
 import com.qian.qianaiagent.ability.UserAbilityProfile;
 import com.qian.qianaiagent.ability.UserAbilityService;
+import com.qian.qianaiagent.catalog.DirectionCatalog;
 import com.qian.qianaiagent.interview.QuestionSelector;
-import com.qian.qianaiagent.interview.QuizApp;
 import com.qian.qianaiagent.knowledge.KnowledgePoint;
 import com.qian.qianaiagent.knowledge.TopicDimensions;
 
@@ -35,10 +35,6 @@ import com.qian.qianaiagent.knowledge.TopicDimensions;
 @Slf4j
 public class TopicRotationService {
 
-    /** @deprecated 请使用 {@link SequentialRotationService#TOPIC_NAMES} */
-    @Deprecated
-    public static final List<String> TOPICS = SequentialRotationService.TOPIC_NAMES;
-
     /** 可选：UserAbilityService 引用（通过 setter 注入，避免循环依赖） */
     private UserAbilityService userAbilityService;
 
@@ -47,82 +43,6 @@ public class TopicRotationService {
      */
     public void setUserAbilityService(UserAbilityService service) {
         this.userAbilityService = service;
-    }
-
-    /** 话题 → ASCII 文件名映射（避免中文文件名在 ClassPathResource 中加载失败） */
-    private static final java.util.Map<String, String> TOPIC_TO_FILENAME =
-            java.util.Map.ofEntries(
-                    java.util.Map.entry("Java基础与集合", "01-bagu-java-basics"),
-                    java.util.Map.entry("Java并发", "03-bagu-java-concurrency"),
-                    java.util.Map.entry("JVM", "02-bagu-jvm"),
-                    java.util.Map.entry("Spring框架", "09-bagu-spring"),
-                    java.util.Map.entry("MySQL", "06-bagu-mysql"),
-                    java.util.Map.entry("Redis", "07-bagu-redis"),
-                    java.util.Map.entry("消息队列", "08-bagu-mq"),
-                    java.util.Map.entry("计算机网络", "05-bagu-network"),
-                    java.util.Map.entry("操作系统与Linux", "04-bagu-os-linux"),
-                    java.util.Map.entry("分布式与微服务", "11-bagu-distributed"),
-                    java.util.Map.entry("算法与数据结构", "13-bagu-algorithm"),
-                    java.util.Map.entry("设计模式", "10-bagu-design-patterns"),
-                    java.util.Map.entry("系统设计与场景", "12-bagu-system-design"),
-                    java.util.Map.entry("Docker与运维", "14-bagu-docker"),
-                    java.util.Map.entry("ES与搜索", "15-bagu-es-search"),
-                    java.util.Map.entry("Agent与AI应用", "16-bagu-agent-ai"));
-
-    /** 话题 → 对应的面渣逆袭文件名列表（可能为空，即该方向没有面渣逆袭补充） */
-    private static final java.util.Map<String, java.util.List<String>> TOPIC_TO_MIANZHA =
-            java.util.Map.ofEntries(
-                    java.util.Map.entry("Java基础与集合", java.util.List.of("01-面渣逆袭-Java基础", "01-面渣逆袭-集合框架")),
-                    java.util.Map.entry("Java并发", java.util.List.of("03-面渣逆袭-并发编程")),
-                    java.util.Map.entry("JVM", java.util.List.of("02-面渣逆袭-JVM")),
-                    java.util.Map.entry("Spring框架", java.util.List.of("09-面渣逆袭-Spring")),
-                    java.util.Map.entry("MySQL", java.util.List.of("06-面渣逆袭-MySQL")),
-                    java.util.Map.entry("Redis", java.util.List.of("07-面渣逆袭-Redis")),
-                    java.util.Map.entry("消息队列", java.util.List.of("08-面渣逆袭-RocketMQ")),
-                    java.util.Map.entry("计算机网络", java.util.List.of("05-面渣逆袭-计算机网络")),
-                    java.util.Map.entry("操作系统与Linux", java.util.List.of("04-面渣逆袭-操作系统")),
-                    java.util.Map.entry("分布式与微服务", java.util.List.of("11-面渣逆袭-分布式", "11-面渣逆袭-微服务")));
-
-    /** 🔴 [Hotfix-RAG联动] 文件名（不含扩展名）→ 方向名逆向映射（用于文档元数据打标） */
-    public static final java.util.Map<String, String> FILENAME_TO_TOPIC = buildFilenameToTopic();
-
-    private static java.util.Map<String, String> buildFilenameToTopic() {
-        java.util.HashMap<String, String> map = new java.util.HashMap<>();
-        for (java.util.Map.Entry<String, String> e : TOPIC_TO_FILENAME.entrySet()) {
-            map.put(e.getValue(), e.getKey()); // "bagu-java-concurrency" → "Java并发"
-        }
-        for (java.util.Map.Entry<String, java.util.List<String>> e : TOPIC_TO_MIANZHA.entrySet()) {
-            for (String mz : e.getValue()) {
-                map.put(mz, e.getKey()); // "面渣逆袭-并发编程" → "Java并发"
-            }
-        }
-        return java.util.Map.copyOf(map);
-    }
-
-    /**
-     * 🔴 [Hotfix-RAG联动] 从文件名推断所属方向名。
-     * 优先查 {@link #FILENAME_TO_TOPIC}，找不到才 fallback 到默认值。
-     *
-     * @param filename 完整文件名（如 "bagu-java-concurrency.md"）
-     * @return 方向名（如 "Java并发"），未知返回 "default"
-     */
-    public static String topicFromFilename(String filename) {
-        if (filename == null || filename.isBlank()) return "default";
-        int dotIndex = filename.lastIndexOf('.');
-        String base = dotIndex > 0 ? filename.substring(0, dotIndex) : filename;
-        return FILENAME_TO_TOPIC.getOrDefault(base, "default");
-    }
-
-    /** 话题 → 纯英文文件名（xxx.md），供 ClassPathResource 使用 */
-    public static String topicToFilename(String topic) {
-        return TOPIC_TO_FILENAME.getOrDefault(topic, "bagu-" + topic) + ".md";
-    }
-
-    /** 话题 → 面渣逆袭补充文件名列表（带 .md 后缀） */
-    public static java.util.List<String> topicToMianzhaFilenames(String topic) {
-        java.util.List<String> names = TOPIC_TO_MIANZHA.get(topic);
-        if (names == null) return java.util.List.of();
-        return names.stream().map(n -> n + ".md").toList();
     }
 
     // ===== 🔴 [Hotfix-驻留轮次] 动态驻留常量 =====
@@ -222,7 +142,7 @@ public class TopicRotationService {
      * 加权随机洗牌：掌握度越低的方向越靠前（优先考察薄弱方向）
      */
     private List<String> shuffledWithWeights(String chatId) {
-        List<String> topics = new ArrayList<>(TOPICS);
+        List<String> topics = new ArrayList<>(DirectionCatalog.TOPIC_NAMES);
         if (userAbilityService == null) {
             Collections.shuffle(topics);
             return topics;

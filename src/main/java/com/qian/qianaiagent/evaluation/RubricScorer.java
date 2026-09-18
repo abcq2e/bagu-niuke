@@ -5,8 +5,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qian.qianaiagent.agent.trace.AgentTrace;
 import com.qian.qianaiagent.agent.trace.TraceStep;
 import jakarta.annotation.Resource;
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -179,25 +181,8 @@ public class RubricScorer {
                     .build();
         }
     }
-    // ============================================================
-    // 🟢 幻觉专项检测
-    // ============================================================
-    // 💡 除了 LLM 综合评分时顺带看幻觉，这里做量化检测：
-    //   1. 从最终回答提取原子声明（claims）
-    //   2. 拼接工具调用结果为"可查证的上下文"
-    //   3. 逐条验证每个 claim 能否从上下文中推断
-    //   4. 幻觉率 = 无依据的声明数 / 总声明数
-    //
-    //   跟 RagasEvaluator 里的 extractClaims + verifyClaimByContext 是同一套思路，
-    //   但这里直接用 ChatClient 写，避免依赖 RagasEvaluator 的 private 方法。
 
-    /**
-     * 检测 Agent 回答中的幻觉比率。
-     *
-     * @param finalAnswer Agent 最终回答文本
-     * @param toolResults 所有工具调用的结果摘要列表
-     * @return 幻觉率 [0, 1]，0 = 全部有据可查，1 = 全部是编的
-     */
+    //检测这个AI幻觉
     public double detectHallucination(String finalAnswer, List<String> toolResults) {
         if (finalAnswer == null || finalAnswer.isBlank()) {
             return 1.0; // 没有回答 = 完全不可信
@@ -205,27 +190,23 @@ public class RubricScorer {
         if (toolResults == null || toolResults.isEmpty()) {
             return 1.0; // 没有检索依据 = 全部算幻觉
         }
-
         // Step 1: 从最终回答中提取原子声明
         List<String> claims = extractClaims(finalAnswer);
         if (claims.isEmpty()) {
             log.warn("未能从回答中提取到声明，幻觉率返回 0.5（保守估计）");
             return 0.5;
         }
-
         // Step 2: 拼接工具调用结果为上下文
         String context = String.join("\n", toolResults);
-
         // Step 3: 逐条验证
         int unsupportedCount = 0;
         for (String claim : claims) {
-            if (!verifyClaim(claim, context)) {
+            if (!verifyClaim(claim, context)) {     //验证当前的声明是否有效
                 unsupportedCount++;
             }
         }
-
         // Step 4: 计算幻觉率
-        double rate = (double) unsupportedCount / claims.size();
+        double rate = (double) unsupportedCount / claims.size();   //非有效的个数除以有效的个数
         log.info("幻觉检测: {}/{} 条声明无依据, 幻觉率={}%",
                 unsupportedCount, claims.size(), String.format("%.0f", rate * 100));
         return rate;
@@ -241,18 +222,14 @@ public class RubricScorer {
                 - 每行一个声明
                 - 只提取事实性内容，忽略主观评价和礼貌用语
                 - 每个声明必须是一个完整的陈述句
-
                 文本：%s
-
                 声明列表：""".formatted(text);
 
         String response = ChatClient.builder(openAiChatModel).build()
                 .prompt().user(prompt).call().content();
-
         if (response == null || response.isBlank()) {
             return List.of();
         }
-
         return response.lines()
                 .map(line -> line.trim()
                         .replaceFirst("^[\\d]+[\\.\\)、]\\s*", "")
@@ -296,19 +273,15 @@ public class RubricScorer {
                     .overallComment("Trace 为空，无法评分")
                     .build();
         }
-
         // 第 1 步：构建评分 Prompt
         String prompt = buildScoringPrompt(query, trace);
-
         // 第 2 步：调 LLM 打分
         RubricResult result = callLLMAndParse(prompt);
-
         // 第 3 步：幻觉专项检测
         String finalAnswer = extractFinalAnswer(trace);
         List<String> toolResults = extractToolResults(trace);
         double hallucinationRate = detectHallucination(finalAnswer, toolResults);
         result.setHallucinationRate(hallucinationRate);
-
         log.info("Rubric 评分完成: 总分={}/100, 幻觉率={}%",
                 result.getTotalScore(), String.format("%.0f", hallucinationRate * 100));
         return result;
@@ -322,15 +295,22 @@ public class RubricScorer {
 
     /**
      * 从 Trace 中提取 Agent 的最终回答。
-     * 取最后一步的 resultSummary，如果为空则往前找。
+     * 优先取"最后一个 LLM_CALL"的内容（真实 Agent 末尾常有 doTerminate 的 TOOL_RESULT，那不算回答）；
+     * 老式 STEP 轨迹（无 LLM_CALL）则退回取任意类型中最后一个非空摘要。
      */
     private String extractFinalAnswer(AgentTrace trace) {
         return trace.getSteps().stream()
+                .filter(step -> "LLM_CALL".equals(step.getStepType()))
                 .sorted(Comparator.comparingInt(TraceStep::getStepNumber).reversed())
                 .filter(step -> step.getResultSummary() != null && !step.getResultSummary().isBlank())
                 .map(TraceStep::getResultSummary)
                 .findFirst()
-                .orElse("（未找到最终回答）");
+                .orElseGet(() -> trace.getSteps().stream()
+                        .sorted(Comparator.comparingInt(TraceStep::getStepNumber).reversed())
+                        .filter(step -> step.getResultSummary() != null && !step.getResultSummary().isBlank())
+                        .map(TraceStep::getResultSummary)
+                        .findFirst()
+                        .orElse("（未找到最终回答）"));
     }
 
     /**
@@ -383,6 +363,8 @@ public class RubricScorer {
     //    Jackson 可以直接把 JSON 反序列化到这个对象。
     @Data
     @Builder
+    @NoArgsConstructor   // 供 Jackson 从 LLM 返回的 JSON 反序列化
+    @AllArgsConstructor
     public static class RubricResult {
         /** 推理质量分数 (0-25) */
         @Builder.Default

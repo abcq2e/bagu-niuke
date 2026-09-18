@@ -8,8 +8,6 @@ import java.util.HashSet;
 import java.util.HashMap;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import com.qian.qianaiagent.ability.DimensionValidator;
-import com.qian.qianaiagent.ability.WeakPointNormalizer;
 
 /**
  * 🔴 [终版-双链路] 各方向必考知识点维度注册表
@@ -21,7 +19,7 @@ import com.qian.qianaiagent.ability.WeakPointNormalizer;
  *   <li>提供维度主体名提取、权重查询等纯工具方法</li>
  * </ul>
  * 不再承担任何关键词匹配、事后分类职责。<br>
- * 维度验证、DIM 标记提取统一由 {@link DimensionValidator} 负责。</p>
+ * 维度验证、DIM 标记提取统一由 DimensionValidator 负责。</p>
  */
 public final class TopicDimensions {
 
@@ -424,30 +422,6 @@ public final class TopicDimensions {
         return DIMENSIONS.getOrDefault(topic, List.of());
     }
 
-    /**
-     * 🔴 [废弃] 关键词维度推断方法，已被 {@link DimensionValidator} 取代。
-     * <p>
-     * 保留仅用于向后兼容，新代码请使用 {@link DimensionValidator#extractDimTags(String)}。
-     *
-     * @deprecated 不再使用关键词匹配。维度追踪走预选+DIM确认链路，
-     * 弱点评维度由评分AI源头标注。请迁移到 {@link DimensionValidator}。
-     */
-    @Deprecated(since = "1.0")
-    public static String inferDimensionFromMarker(String aiResponse, String topic) {
-        if (aiResponse == null || topic == null) return null;
-        List<String> tags = com.qian.qianaiagent.ability.DimensionValidator.extractDimTags(aiResponse);
-        if (tags.isEmpty()) return null;
-        String markerName = tags.get(tags.size() - 1);
-        List<String> dims = getDimensions(topic);
-        if (dims.isEmpty()) return markerName;
-        for (String dim : dims) {
-            if (dim.startsWith(markerName) || dim.contains(markerName)) {
-                return dim;
-            }
-        }
-        return null;
-    }
-
 
     /**
      * 🔴 [全覆盖] 获取指定维度下的知识点列表。
@@ -492,7 +466,7 @@ public final class TopicDimensions {
      * <p>
      * 仅检查维度括号前的主体名是否出现在文本中（如"锁机制"），
      * 不做括号内关键词匹配，不维护关键词表。
-     * 用于 {@link WeakPointNormalizer} 等降级链路的简单过滤。
+     * 用于 WeakPointNormalizer 等降级链路的简单过滤。
      */
     public static boolean matchesDimension(String dimension, String text) {
         if (dimension == null || dimension.isBlank()) return true;

@@ -39,7 +39,7 @@ public class RagSearchTool {
             @ToolParam(description = "搜索关键词或自然语言问题") String query) {
         log.info("RagSearchTool 收到查询: {}", query);
         try {
-            List<Document> docs = multiQuerySearchService.multiQuerySearch(query, 3, 5, 0.3);
+            List<Document> docs = multiQuerySearchService.multiQuerySearch(query, 3, 5, 0.65);
             if (docs.isEmpty()) {
                 return "未检索到相关文档。建议：换用更通用的关键词，或改用 WebSearchTool 搜索互联网。";
             }

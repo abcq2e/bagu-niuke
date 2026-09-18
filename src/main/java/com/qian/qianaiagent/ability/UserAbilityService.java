@@ -24,9 +24,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
-import com.qian.qianaiagent.interview.QuizApp;
-import com.qian.qianaiagent.interview.rotation.SequentialRotationService;
-import com.qian.qianaiagent.interview.rotation.TopicRotationService;
+import com.qian.qianaiagent.catalog.DirectionCatalog;
 import com.qian.qianaiagent.knowledge.TopicDimensions;
 
 /**
@@ -715,7 +713,7 @@ public class UserAbilityService {
             if (result != null && !result.isBlank()) {
                 String cleaned = result.trim().replaceAll("[，,。.!！\\s]", "");
                 // 检查返回的方向名是否在合法列表中
-                for (String t : SequentialRotationService.TOPIC_NAMES) {
+                for (String t : DirectionCatalog.TOPIC_NAMES) {
                     if (cleaned.equals(t) || cleaned.contains(t) || t.contains(cleaned)) {
                         log.info("🤖 AI分类: [{}] → {}", weakPoint, t);
                         recordAiCallSuccess(); // 🔴 [熔断器] 记录成功
@@ -902,7 +900,7 @@ public class UserAbilityService {
         if (text == null || text.isBlank()) return scores;
         String lowerText = text.toLowerCase(java.util.Locale.ROOT).trim();
 
-        for (String topic : TopicRotationService.TOPICS) {
+        for (String topic : DirectionCatalog.TOPIC_NAMES) {
             int score = 0;
             List<String> dims = TopicDimensions.DIMENSIONS.get(topic);
             if (dims == null) continue;

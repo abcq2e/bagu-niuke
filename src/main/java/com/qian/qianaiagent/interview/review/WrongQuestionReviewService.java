@@ -18,8 +18,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import com.qian.qianaiagent.ability.UserAbilityProfile;
 import com.qian.qianaiagent.ability.UserAbilityService;
+import com.qian.qianaiagent.catalog.DirectionCatalog;
 import com.qian.qianaiagent.interview.QuizCommandMatcher;
-import com.qian.qianaiagent.interview.rotation.SequentialRotationService;
 
 /**
  * 错题复习服务 —— 独立会话模式。
@@ -34,7 +34,7 @@ public class WrongQuestionReviewService {
     private static final String REVIEW_SYSTEM_PROMPT = """
             你是错题复习导师。按以下流程回复：
             1️⃣回顾：简短点评上一题（答对则肯定，答错则指出问题）
-            2️⃣讲解：上一题答错时讲解正确答案（100-200字），答对跳过
+            2️⃣讲解：上一题答错时讲解正确答案（100-200字），完全答对跳过
             3️⃣出题：用【本轮必考题干】提问
             🚫禁止讲解本轮题目（泄题！）| 语气耐心鼓励 | 代码```包裹 | 禁止寒暄""";
 
@@ -189,7 +189,7 @@ public class WrongQuestionReviewService {
         UserAbilityProfile profile = userAbilityService.getOrCreateProfile(sourceChatId);
         List<TopicQuestions> pool = new ArrayList<>();
 
-        for (String topic : SequentialRotationService.TOPIC_NAMES) {
+        for (String topic : DirectionCatalog.TOPIC_NAMES) {
             UserAbilityProfile.TopicScore ts = profile.getTopicScores().get(topic);
             if (ts == null || ts.getWrongQuestions() == null || ts.getWrongQuestions().isEmpty()) {
                 continue;

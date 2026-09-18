@@ -1,7 +1,9 @@
 package com.qian.qianaiagent.agent.trace;
 
+import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 
@@ -43,6 +45,8 @@ import java.time.LocalDateTime;
  */
 @Data
 @Builder
+@NoArgsConstructor   // 供 Jackson 从 JSON 反序列化轨迹文件（logs/traces/*.json）
+@AllArgsConstructor  // 与 @NoArgsConstructor 同时存在时，@Builder 需要显式全参构造器
 public class TraceStep {
 
     /** 第几步（从 1 开始） */

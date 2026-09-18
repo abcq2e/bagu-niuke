@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import com.qian.qianaiagent.interview.rotation.SequentialRotationService;
+import com.qian.qianaiagent.catalog.DirectionCatalog;
 
 /**
  * 面试题目文档缓存 — 启动时一次性加载所有方向题目。
@@ -34,12 +34,12 @@ public class TopicDocumentCache {
     public void init() {
         long start = System.currentTimeMillis();
         int totalBagus = 0, totalMianzha = 0;
-        for (String topic : SequentialRotationService.TOPIC_NAMES) {
+        for (String topic : DirectionCatalog.TOPIC_NAMES) {
             // 加载 bagu 文档
-            String baguFile = SequentialRotationService.topicToFilename(topic);
+            String baguFile = DirectionCatalog.topicToFilename(topic);
             List<String> baguQuestions = loadQuestionsFromFile(baguFile);
             // 加载面渣逆袭文档
-            List<String> mianzhaFiles = SequentialRotationService.topicToMianzhaFilenames(topic);
+            List<String> mianzhaFiles = DirectionCatalog.topicToMianzhaFilenames(topic);
             List<String> mianzhaQuestions = new ArrayList<>();
             for (String mf : mianzhaFiles) {
                 mianzhaQuestions.addAll(loadMianzhaQuestions(mf));
@@ -72,7 +72,7 @@ public class TopicDocumentCache {
                     topic, baguQuestions.size(), mianzhaQuestions.size(), dupCount, ordered.size());
         }
         log.info("✅ 题库加载完成: {}个方向, bagu共{}题, 面渣共{}题, 耗时{}ms",
-                SequentialRotationService.TOPIC_NAMES.size(), totalBagus, totalMianzha,
+                DirectionCatalog.TOPIC_NAMES.size(), totalBagus, totalMianzha,
                 System.currentTimeMillis() - start);
     }
 

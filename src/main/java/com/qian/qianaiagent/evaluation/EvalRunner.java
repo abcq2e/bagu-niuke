@@ -21,21 +21,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 离线回归评测入口 —— 项目里唯一的"跑一次评测集"的地方。
- *
- * <p><b>怎么触发：</b>
- * <pre>
- *   全量跑（3 个用例）：        mvn spring-boot:run -Peval
- *   含稳定性测试（连跑 5 次）：  mvn spring-boot:run -Peval -Dspring-boot.run.arguments=--qian.eval.stability=5
- * </pre>
- *
- * <p><b>做什么：</b>从 {@code evaluation/baselines/} 读出用例（用例定义与基线分数同文件），
- * 逐个跑真实 Agent → 确定性评分 + Rubric 评分 → 与基线对比（无基线则自动建立）→ 渲染报告。
- *
- * <p><b>为什么用 {@code @ConditionalOnProperty}：</b>正常启动应用时这个 Bean 根本不存在，
- * 不会因为误触发而消耗 LLM 调用。只有 eval profile 才把它打开。
- */
+//评估机制的出口类
 @Slf4j
 @Component
 @ConditionalOnProperty(name = "qian.eval.enabled", havingValue = "true")
@@ -43,25 +29,18 @@ public class EvalRunner implements CommandLineRunner {
 
     /** 报告落盘目录（同时打印到控制台，避免 Windows 控制台中文乱码） */
     private static final String REPORT_DIR = "logs/eval";
-
     @Resource
     private ObjectProvider<YuManus> yuManusProvider;
-
     @Resource
     private DeterministicScorer deterministicScorer;
-
     @Resource
     private RubricScorer rubricScorer;
-
     @Resource
     private BaselineManager baselineManager;
-
     private final ApplicationContext applicationContext;
-
     /** 稳定性测试重复次数，0 = 不跑 */
     @Value("${qian.eval.stability:0}")
     private int stabilityRuns;
-
     public EvalRunner(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;
     }
@@ -71,14 +50,10 @@ public class EvalRunner implements CommandLineRunner {
         log.info("════ 离线评估开始 ════");
         EvalReport report = evaluate();
         String rendered = report.render();
-
         System.out.println(rendered);
         writeReportFile(rendered);
-
         int exitCode = report.exitCode();
         log.info("════ 离线评估结束，退出码 {} ════", exitCode);
-
-        // 评测跑完就该退出，不能让 Web 服务挂着
         SpringApplication.exit(applicationContext, () -> exitCode);
         System.exit(exitCode);
     }
@@ -89,21 +64,17 @@ public class EvalRunner implements CommandLineRunner {
 
     private EvalReport evaluate() {
         long start = System.currentTimeMillis();
-
         List<BaselineManager.Baseline> cases = baselineManager.loadAllBaselines();
         log.info("加载了 {} 个评估用例", cases.size());
-
         List<EvalReport.CaseOutcome> outcomes = new ArrayList<>();
         for (BaselineManager.Baseline evalCase : cases) {
             outcomes.add(runOneCase(evalCase));
         }
-
         StabilityTester.StabilityReport stability = null;
         if (stabilityRuns >= 2 && !cases.isEmpty()) {
             // 用第一条用例做稳定性样本；顺序由文件名决定，不额外挑拣
             stability = runStabilityTest(cases.get(0));
         }
-
         return EvalReport.builder()
                 .generatedAt(LocalDateTime.now())
                 .outcomes(outcomes)
@@ -175,19 +146,16 @@ public class EvalRunner implements CommandLineRunner {
 
     private StabilityTester.StabilityReport runStabilityTest(BaselineManager.Baseline evalCase) {
         log.info("▶ 稳定性测试 [{}]：连跑 {} 次", evalCase.getCaseName(), stabilityRuns);
-
         StabilityTester tester = new StabilityTester(stabilityRuns);
         return tester.test(evalCase.getCaseName(), () -> {
             try {
                 YuManus agent = yuManusProvider.getObject();
                 agent.run(evalCase.getQuery());
                 AgentTrace trace = agent.getCurrentTrace();
-
                 if (trace == null || trace.getSteps() == null || trace.getSteps().isEmpty()) {
                     return StabilityTester.TestResult.builder()
                             .totalScore(0).passed(false).errorMessage("轨迹为空").build();
                 }
-
                 DeterministicScorer.ScoreResult det =
                         deterministicScorer.score(trace, evalCase.getExpectedBehavior());
                 return StabilityTester.TestResult.builder()

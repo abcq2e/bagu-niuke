@@ -1,8 +1,7 @@
-package com.qian.qianaiagent.knowledge;
+package com.qian.qianaiagent.ability;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import com.qian.qianaiagent.ability.ConfidenceLevel;
 
 /**
  * 🔴 [终版-双链路] 离线异常队列记录

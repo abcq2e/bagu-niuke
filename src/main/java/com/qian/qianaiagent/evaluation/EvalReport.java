@@ -89,7 +89,6 @@ public class EvalReport {
     public String render() {
         String rule = "══════════════════════════════════════════════════════════\n";
         String thin = "──────────────────────────────────────────────────────────\n";
-
         StringBuilder sb = new StringBuilder();
         sb.append(rule);
         sb.append("  Agent 评估报告   ").append(generatedAt).append("\n");
@@ -101,7 +100,6 @@ public class EvalReport {
         for (int i = 0; i < outcomes.size(); i++) {
             appendOutcome(sb, thin, i + 1, outcomes.get(i));
         }
-
         if (stability != null) {
             sb.append(thin);
             sb.append(String.format("  稳定性  pass^%d = %d/%d (%.0f%%)  %s%n",
@@ -109,7 +107,6 @@ public class EvalReport {
                     stability.getPassK() * 100,
                     stability.isStable() ? "✅ 稳定（失败率 ≤ 10%）" : "❌ 不稳定（失败率 > 10%）"));
         }
-
         sb.append(rule);
         sb.append("  结论  ").append(conclusion()).append("\n");
         sb.append(rule);

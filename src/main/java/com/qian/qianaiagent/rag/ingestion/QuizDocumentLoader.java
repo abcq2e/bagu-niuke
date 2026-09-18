@@ -10,12 +10,11 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.ResourcePatternResolver;
 import org.springframework.stereotype.Component;
 
-import com.qian.qianaiagent.interview.rotation.SequentialRotationService;
-import com.qian.qianaiagent.interview.rotation.TopicRotationService;
+import com.qian.qianaiagent.catalog.DirectionCatalog;
+import com.qian.qianaiagent.rag.vision.PdfImageAnalyzer;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import com.qian.qianaiagent.rag.vision.PdfImageAnalyzer;
 
 /**
  * 知识点考察应用文档加载器
@@ -136,14 +135,14 @@ public class QuizDocumentLoader {
     }
 
     /**
-     * 从文件名提取二级主题：用 {@link SequentialRotationService#topicFromFilename} 优先匹配，
+     * 从文件名提取二级主题：用 {@link DirectionCatalog#topicFromFilename} 优先匹配，
      * 匹配失败才 fallback 到文件名截取。
      * "bagu-java-concurrency.md" → "Java并发"（通过逆向映射）
      * "面渣逆袭-并发编程.md" → "Java并发"
      */
     private String extractTopic(String filename) {
         // 🔴 [Hotfix-RAG联动] 优先用已知映射获取正确的方向名
-        String mapped = SequentialRotationService.topicFromFilename(filename);
+        String mapped = DirectionCatalog.topicFromFilename(filename);
         if (!"default".equals(mapped)) {
             return mapped;
         }

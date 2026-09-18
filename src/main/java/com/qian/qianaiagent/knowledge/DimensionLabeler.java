@@ -1,13 +1,14 @@
-package com.qian.qianaiagent.ability;
+package com.qian.qianaiagent.knowledge;
 
 import java.util.List;
 import java.util.Locale;
-import com.qian.qianaiagent.knowledge.KnowledgePoint;
-import com.qian.qianaiagent.knowledge.TopicDimensions;
 
 /**
  * 关键词维度挂靠：用 TopicDimensions 主体名 + 括号内关键词打分。
  * 多级匹配策略确保高挂靠率：主体全匹配 > 主体部分匹配 > 括号关键词匹配。
+ * <p>
+ * 原属 ability 包，但因只依赖 knowledge 数据且唯一调用方是 {@link KnowledgePointCatalog}，
+ * 归位到 knowledge，消除 ability ⇄ knowledge 循环。
  */
 public final class DimensionLabeler {
 

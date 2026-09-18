@@ -1,4 +1,4 @@
-package com.qian.qianaiagent.knowledge;
+package com.qian.qianaiagent.ability;
 
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
