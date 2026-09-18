@@ -76,6 +76,29 @@ public class JwtAuthFilter implements Filter {
             "/favicon.ico"
     };
 
+    /**
+     * 允许通过 URL 参数传 token 的端点 —— 仅限 SSE。
+     * <p>
+     * {@code EventSource} 无法设置自定义请求头，所以这几个端点必须能从 query 取 token。
+     * 但 URL 会进 access log、Referer 与浏览器历史，因此<b>不能全站开放</b>：
+     * 判据用路径白名单而非 {@code Accept} 头 —— 后者由客户端声明、可随意伪造。
+     */
+    private static final String[] URL_TOKEN_PATHS = {
+            "/ai/chat",             // InterviewChatController.doChat
+            "/ai/review/chat",      // InterviewChatController.doReviewChat
+            "/ai/agent/chat"        // AgentChatController.doAgentChat
+    };
+
+    /** 该路径是否允许从 URL 查询参数取 token。包级可见以便单测。 */
+    static boolean allowsUrlToken(String path, String contextPath) {
+        for (String allowed : URL_TOKEN_PATHS) {
+            if (path.equals(contextPath + allowed)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Override
     public void doFilter(ServletRequest servletRequest, ServletResponse servletResponse, FilterChain chain)
             throws IOException, ServletException {
@@ -108,14 +131,13 @@ public class JwtAuthFilter implements Filter {
             }
         }
 
-        // 从请求头 Authorization 或 URL 参数中提取 Token
-        // EventSource API 无法发送自定义请求头，所以 SSE 连接通过 URL 参数传 token
+        // 从请求头 Authorization 提取 Token；
+        // 仅 SSE 端点允许回退到 URL 参数（EventSource 无法发送自定义请求头）
         String token = null;
         String authHeader = request.getHeader("Authorization");
         if (authHeader != null && authHeader.startsWith("Bearer ")) {
             token = authHeader.substring(7);
-        } else {
-            // fallback: 从 URL 查询参数中取 token（用于 EventSource SSE 连接）
+        } else if (allowsUrlToken(path, contextPath)) {
             token = request.getParameter("token");
         }
         if (token == null || token.isBlank()) {
