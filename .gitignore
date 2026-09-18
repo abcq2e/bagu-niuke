@@ -2,6 +2,8 @@
 application-local.yml
 tmp
 .env
+.env.*
+!.env.template
 data/
 .knowledge-catalog/
 .ability-profiles/
