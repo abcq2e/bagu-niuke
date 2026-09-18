@@ -12,17 +12,18 @@ class FileOperationToolTest {
     void readFile() {
         FileOperationTool fileOperationTool = new FileOperationTool();
         String fileName = "编程导航.txt";
+        // 先确保文件存在再读 —— 否则读的是从未创建的路径，assertNotNull 恒真、测不出任何东西
+        fileOperationTool.writeFile(fileName, "https://www.codefather.cn 程序员编程学习交流社区");
         String result = fileOperationTool.readFile(fileName);
-        Assertions.assertNotNull(result);
+        Assertions.assertTrue(result.contains("codefather.cn"), "实际: " + result);
     }
 
     @Test
     void writeFile() {
         FileOperationTool fileOperationTool = new FileOperationTool();
-        String fileName = "编程导航.txt";
-        String content = "https://www.codefather.cn 程序员编程学习交流社区";
-        String result = fileOperationTool.writeFile(fileName, content);
-        Assertions.assertNotNull(result);
+        String result = fileOperationTool.writeFile("编程导航.txt",
+                "https://www.codefather.cn 程序员编程学习交流社区");
+        Assertions.assertTrue(result.startsWith("File written successfully"), "实际: " + result);
     }
 
     @Test

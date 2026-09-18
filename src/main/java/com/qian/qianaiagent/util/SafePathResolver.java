@@ -17,10 +17,13 @@ import java.nio.file.Path;
  * <h2>三层防护</h2>
  * <ol>
  *   <li>拒绝 {@code ..} 路径段与绝对路径（按段判定，{@code a..b.txt} 这类合法名不受影响）</li>
- *   <li>{@code normalize()} 后做前缀检查（挡住 {@code a/../../x} 这类嵌套）</li>
- *   <li>用 {@code NOFOLLOW_LINKS} 检测链接「本身」是否存在，存在则 {@code toRealPath()} 再查一次
- *       （挡住符号链接逃逸）；注意悬空链接本身存在但跟随判定为 false，必须按链接本身判定，
- *       且 {@code toRealPath()} 无法解析时保守拒绝，不静默放行</li>
+ *   <li>纵深防御：{@code normalize()} 之后再做一次前缀比对。含 {@code ..} 的输入在第 1 条
+ *       就已拒绝，这一层主要是兜住 normalize 本身可能产生的意外结果（例如空串归一为 {@code .}），
+ *       不是为了挡 {@code a/../../x} —— 那个输入根本到不了这里</li>
+ *   <li>解析「最深的存在祖先」并对其 {@code toRealPath()}，比对真实路径是否仍在根内 ——
+ *       挡住符号链接/junction 逃逸。只解析最终元素是不够的：输入 {@code linkdir/new.txt} 时
+ *       最终元素不存在，只看最终元素的检查会被整个跳过，而 {@code linkdir} 本身可能指向目录外。
+ *       悬空链接无法解析时保守拒绝，不静默放行</li>
  * </ol>
  */
 public final class SafePathResolver {
@@ -32,7 +35,9 @@ public final class SafePathResolver {
      * 把 {@code userPath} 解析到 {@code baseDir} 之内。
      *
      * @return 解析后的绝对路径，保证位于 {@code baseDir} 内
-     * @throws IllegalArgumentException 路径为空、越界、或是绝对路径
+     * @throws IllegalArgumentException 路径为空或全空白、含 {@code ..} 段、为绝对路径、
+     *                                  指向根目录本身、含非法字符（如 Windows 的 {@code <>:"|?*}）、
+     *                                  无法解析（悬空符号链接）或是经由符号链接越界
      */
     public static Path resolveWithin(Path baseDir, String userPath) {
         if (userPath == null || userPath.isBlank()) {
@@ -43,7 +48,7 @@ public final class SafePathResolver {
         try {
             candidate = Path.of(userPath);
         } catch (InvalidPathException e) {
-            throw new IllegalArgumentException("路径无法解析: " + userPath);
+            throw new IllegalArgumentException("路径无法解析: " + userPath + " — " + e.getMessage());
         }
         if (candidate.isAbsolute()) {
             throw new IllegalArgumentException("不允许绝对路径: " + userPath);
@@ -60,13 +65,32 @@ public final class SafePathResolver {
         if (!resolved.startsWith(normalizedBase)) {
             throw new IllegalArgumentException("路径越界: " + userPath);
         }
+        // 指向根目录本身没有意义，且会让 writeFile 去写一个目录
+        if (resolved.equals(normalizedBase)) {
+            throw new IllegalArgumentException("路径不能指向根目录本身: " + userPath);
+        }
 
-        // 🔴 NOFOLLOW_LINKS：悬空符号链接「本身存在」但跟随判定为 false，
-        //    若跟随判定就会漏过它 —— 而往悬空链接写入会在目录外真实创建文件
-        if (Files.exists(resolved, LinkOption.NOFOLLOW_LINKS)) {
+        // 🔴 必须解析「最深的存在祖先」，而不是只看最终元素：
+        //    若 base/linkdir 是指向目录外的链接，输入 "linkdir/new.txt" 的最终元素不存在，
+        //    只看最终元素的检查会被整个跳过 —— 那是一条真实逃逸路径。
+        //    NOFOLLOW_LINKS：悬空链接「本身存在」但跟随判定为 false，必须按链接本身判定，
+        //    否则往悬空链接写入会在目录外真实创建文件。
+        Path probe = resolved;
+        Path existingAncestor = null;
+        while (probe != null) {
+            if (Files.exists(probe, LinkOption.NOFOLLOW_LINKS)) {
+                existingAncestor = probe;
+                break;
+            }
+            if (probe.equals(normalizedBase)) {
+                break;      // 连 base 都不存在：没有可解析的祖先
+            }
+            probe = probe.getParent();
+        }
+        if (existingAncestor != null) {
             Path real;
             try {
-                real = resolved.toRealPath();
+                real = existingAncestor.toRealPath();
             } catch (IOException e) {
                 // 悬空链接或无法解析 —— 保守拒绝，不猜
                 throw new IllegalArgumentException("路径无法解析（可能是悬空符号链接）: " + userPath);

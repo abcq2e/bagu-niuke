@@ -88,6 +88,27 @@ class SafePathResolverTest {
     }
 
     @Test
+    void rejectsEscapeViaSymlinkedDirectory() throws Exception {
+        // base/linkdir -> 目录外，再写 linkdir/new.txt。
+        // 最终元素 new.txt 不存在，只看最终元素的检查会漏过这条逃逸。
+        Path outside = Files.createTempDirectory("outside");
+        Path linkDir = base.resolve("linkdir");
+        try {
+            Files.createSymbolicLink(linkDir, outside);
+        } catch (UnsupportedOperationException | IOException e) {
+            Assumptions.assumeTrue(false, "本机无法创建目录符号链接，跳过: " + e.getMessage());
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> SafePathResolver.resolveWithin(base, "linkdir/new.txt"));
+    }
+
+    @Test
+    void rejectsBaseItself() {
+        assertThrows(IllegalArgumentException.class,
+                () -> SafePathResolver.resolveWithin(base, "."));
+    }
+
+    @Test
     void acceptsDotsInsideFileName() {
         // a..b.txt 是合法文件名，不能因为字符串含 .. 就误拒
         Path resolved = SafePathResolver.resolveWithin(base, "a..b.txt");
