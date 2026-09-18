@@ -32,7 +32,12 @@ class JwtAuthFilterUrlTokenTest {
 
         new JwtAuthFilter().doFilter(request, response, new MockFilterChain());
 
-        // token 不再从 URL 取 → 视为未登录
+        // 🔴 只断言 401 是不够的：旧代码在 URL token 被取到后会让 jwtUtil 抛 NPE，
+        //    被 catch (Exception) 吞掉同样返回 401。必须断言落在「未登录」分支，
+        //    否则这个测试在收窄被回退后依然会绿。
         assertEquals(401, response.getStatus());
+        String body = response.getContentAsString();
+        assertTrue(body.contains("未登录"), "应走未登录分支，实际响应体: " + body);
+        assertFalse(body.contains("认证失败"), "不应触达 token 解析，实际响应体: " + body);
     }
 }
