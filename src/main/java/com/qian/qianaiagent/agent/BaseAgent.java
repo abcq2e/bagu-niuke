@@ -63,42 +63,29 @@ public abstract class BaseAgent {
      * @return 执行结果
      */
     public String run(String userPrompt) {
-        // 1、基础校验
         if (this.state != AgentState.IDLE) {
             throw new RuntimeException("Cannot run agent from state: " + this.state);
         }
         if (StrUtil.isBlank(userPrompt)) {
             throw new RuntimeException("Cannot run agent with empty user prompt");
         }
-        // 2、执行，更改状态
         this.state = AgentState.RUNNING;
-        // 记录消息上下文
         messageList.add(new UserMessage(userPrompt));
-        // 保存结果列表
         List<String> results = new ArrayList<>();
         try {
-            // ============================================================
-            // 🧠 任务 3：初始化 AgentTrace —— 在 try 块开始处创建
-            // ============================================================
             this.currentTrace = AgentTrace.builder()
                     .agentName(this.name)
                     .startTime(LocalDateTime.now())
                     .steps(new ArrayList<>())
                     .build();
-            // 执行循环
             for (int i = 0; i < maxSteps && state != AgentState.FINISHED; i++) {
                 int stepNumber = i + 1;
                 currentStep = stepNumber;
                 log.info("Executing step {}/{}", stepNumber, maxSteps);
-                // 🧠 任务 3：每一步执行前记录开始时间，执行后构建 TraceStep 加入 trace
                 long stepStart = System.currentTimeMillis();
-                // 单步执行
                 String stepResult = step();
                 long stepDuration = System.currentTimeMillis() - stepStart;
-                // 细粒度 Agent（ToolCallAgent）在 step() 内已自行记录真实事件，
-                // 这里只对"粗粒度 Agent"保留一条 STEP 兜底，避免轨迹混入噪音。
                 if (!shouldRecordFineGrainedTrace()) {
-                    // 构建这一步的 TraceStep
                     TraceStep traceStep = TraceStep.builder()
                             .stepNumber(stepNumber)
                             .stepType("STEP")
@@ -111,22 +98,13 @@ public abstract class BaseAgent {
                             .build();
                     this.currentTrace.getSteps().add(traceStep);
                 }
-
                 String result = "Step " + stepNumber + ": " + stepResult;
                 results.add(result);
             }
-            // ============================================================
-            // 🧠 任务 3：循环结束后，封口 AgentTrace 并打印 JSON 日志
-            // ============================================================
             this.currentTrace.setEndTime(LocalDateTime.now());
             this.currentTrace.setFinalState(state.name());
             String traceJson = JSONUtil.toJsonPrettyStr(this.currentTrace);
             log.info("Agent Trace:\n{}", traceJson);
-
-            // ============================================================
-            // 🧠 任务 4：把 Trace 存到文件 logs/traces/{agentName}_{时间戳}.json
-            // ============================================================
-            // 时间戳格式：20250621_143025（年月日_时分秒）
             String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
             File traceDir = new File("logs/traces");
             if (!traceDir.exists()) {
@@ -139,8 +117,6 @@ public abstract class BaseAgent {
             } catch (IOException e) {
                 log.error("保存 Trace 文件失败", e);
             }
-            // ============================================================
-            // 检查是否超出步骤限制
             if (currentStep >= maxSteps) {
                 state = AgentState.FINISHED;
                 results.add("Terminated: Reached max steps (" + maxSteps + ")");
@@ -276,17 +252,6 @@ public abstract class BaseAgent {
      */
     public abstract String step();
 
-    // ============================================================
-    // 🧠 细粒度轨迹支持：让 ReAct/ToolCall 类 Agent 记录真实事件
-    // ============================================================
-
-    /**
-     * 该 Agent 是否由自身记录"细粒度轨迹"（LLM_CALL/TOOL_CALL/TOOL_RESULT）。
-     *
-     * <p>默认 false → {@link #run(String)} 沿用旧的"每轮一条粗粒度 STEP"轨迹，行为不变。
-     * 细粒度 Agent（如 ToolCallAgent）覆写为 true，自行在 think()/act() 中调用
-     * {@link #recordTraceStep} 记录真实事件，run() 就不再追加粗粒度 STEP，避免轨迹混入噪音。
-     */
     protected boolean shouldRecordFineGrainedTrace() {
         return false;
     }

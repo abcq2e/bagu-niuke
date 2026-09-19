@@ -46,11 +46,13 @@ public class AbilityProfileController {
      */
     @GetMapping("/quiz/profile/{chatId}/summary")
     public Map<String, String> getProfileSummary(@PathVariable String chatId) {
-        String summary = userAbilityService.buildSummary(chatId);
+        // 🔴 必须传当前用户：此前传 null 会让 resolveKey 回退成 chatId 作 key，读到别人的画像
+        Long userId = UserContext.getCurrentUserId();
+        String summary = userAbilityService.buildSummary(chatId, userId);
         String aiSuggestion = "";
         try {
             // 调用 LLM 生成学习建议
-            aiSuggestion = userAbilityService.generateAISuggestion(chatId);
+            aiSuggestion = userAbilityService.generateAISuggestion(chatId, userId);
         } catch (Exception e) {
             aiSuggestion = "基于您的考察数据生成个性化建议失败，请稍后重试。";
             log.warn("生成 AI 建议失败: {}", e.getMessage());

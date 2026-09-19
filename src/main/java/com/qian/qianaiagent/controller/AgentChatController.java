@@ -2,7 +2,9 @@ package com.qian.qianaiagent.controller;
 
 import com.qian.qianaiagent.agent.YuManus;
 import com.qian.qianaiagent.annotation.RateLimit;
+import com.qian.qianaiagent.context.UserContext;
 import com.qian.qianaiagent.evaluation.EvaluationRecorder;
+import com.qian.qianaiagent.memory.ConversationAccess;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -32,6 +34,10 @@ public class AgentChatController {
     /** 每次请求获取新的 Agent 实例（Prototype Scope），避免多请求间状态冲突 */
     @Resource
     private ObjectProvider<YuManus> yuManusProvider;
+
+    /** 会话归属守卫 */
+    @Resource
+    private ConversationAccess conversationAccess;
 
     /** Agent 多轮对话记忆（滑动窗口 + 摘要压缩） */
     @Resource(name = "chatMemory")
@@ -74,7 +80,14 @@ public class AgentChatController {
         final String finalChatId = (chatId == null || chatId.isBlank())
                 ? "agent_" + System.currentTimeMillis()
                 : chatId;
-        log.info("📨 收到 Agent 对话请求: message={}, chatId={}", message, finalChatId);
+        // 🔴 在进入异步流之前捕获 userId：ThreadLocal 在 SseEmitter 的回调线程上不可用，
+        // 且归属校验必须在这里做（响应式线程里已无用户身份）
+        final Long userId = UserContext.getCurrentUserId();
+        if (!conversationAccess.startSession(finalChatId, userId)) {
+            log.warn("🚫 拒绝接入他人 Agent 会话: chatId={}, userId={}", finalChatId, userId);
+            return buildErrorEmitter("无权访问该会话");
+        }
+        log.info("📨 收到 Agent 对话请求: message={}, chatId={}, userId={}", message, finalChatId, userId);
 
         // 获取新的 Agent 实例
         YuManus agent = yuManusProvider.getObject();

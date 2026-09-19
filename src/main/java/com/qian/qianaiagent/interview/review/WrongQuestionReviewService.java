@@ -19,7 +19,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import com.qian.qianaiagent.ability.UserAbilityProfile;
 import com.qian.qianaiagent.ability.UserAbilityService;
 import com.qian.qianaiagent.catalog.DirectionCatalog;
+import com.qian.qianaiagent.config.StorageProperties;
 import com.qian.qianaiagent.interview.QuizCommandMatcher;
+import com.qian.qianaiagent.util.ChatIdValidator;
 
 /**
  * 错题复习服务 —— 独立会话模式。
@@ -56,10 +58,18 @@ public class WrongQuestionReviewService {
                 .build();
     }
 
+    /** 统一存储路径配置（默认 root = user.dir，与改造前行为一致） */
+    @Resource
+    private StorageProperties storage;
+
+    /** 复习游标目录 —— 所有读写都经由 {@link #saveSession}/{@link #loadSession}，保证同名进出。 */
+    private Path cursorDir;
+
     @PostConstruct
     public void init() {
+        cursorDir = storage.reviewCursorPath();
         try {
-            Files.createDirectories(Path.of(".review-cursor"));
+            Files.createDirectories(cursorDir);
         } catch (Exception e) {
             log.warn("无法创建复习游标目录: {}", e.getMessage());
         }
@@ -254,8 +264,8 @@ public class WrongQuestionReviewService {
 
     private void saveSession(ReviewSession session) {
         try {
-            Path file = Path.of(".review-cursor", session.chatId + ".json");
-            objectMapper.writerWithDefaultPrettyPrinter().writeValue(file.toFile(), session);
+            Path file = cursorDir.resolve(ChatIdValidator.safeFileName(session.chatId) + ".json");
+            objectMapper.writeValue(file.toFile(), session);
         } catch (Exception e) {
             log.warn("保存复习游标失败: {}", e.getMessage());
         }
@@ -263,7 +273,9 @@ public class WrongQuestionReviewService {
 
     private ReviewSession loadSession(String chatId) {
         try {
-            Path file = Path.of(".review-cursor", chatId + ".json");
+            // 🔴 chatId 来自请求参数，此前未做任何校验就拼进文件名：
+            // chatId=../data/evals/<victim> 可覆写任意已存在的 .json。
+            Path file = cursorDir.resolve(ChatIdValidator.safeFileName(chatId) + ".json");
             if (!Files.exists(file)) return null;
             return objectMapper.readValue(file.toFile(), ReviewSession.class);
         } catch (Exception e) {

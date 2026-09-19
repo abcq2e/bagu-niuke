@@ -3,7 +3,9 @@ package com.qian.qianaiagent.interview.rotation;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.qian.qianaiagent.config.StorageProperties;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -160,10 +162,20 @@ public class SequentialRotationService {
     private final Map<String, SequentialCursor> sessions = new ConcurrentHashMap<>();
     private final ObjectMapper mapper = new ObjectMapper()
             .enable(SerializationFeature.INDENT_OUTPUT);
-    private final Path cursorDir = Path.of(".quiz-cursor");
+    /**
+     * 统一存储路径配置。
+     * <p>
+     * 此前是裸相对路径 {@code Path.of(".quiz-cursor")} —— 按<b>进程工作目录</b>解析，
+     * IDE / java -jar / 容器三种启动方式可能落到不同位置，游标会「凭空丢失」且不报错。
+     */
+    @Resource
+    private StorageProperties storage;
+
+    private Path cursorDir;
 
     @PostConstruct
     public void init() {
+        cursorDir = storage.quizCursorPath();
         try {
             Files.createDirectories(cursorDir);
         } catch (IOException e) {

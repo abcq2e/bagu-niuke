@@ -5,6 +5,7 @@ import com.qian.qianaiagent.annotation.RateLimit;
 import com.qian.qianaiagent.context.UserContext;
 import com.qian.qianaiagent.interview.QuizApp;
 import com.qian.qianaiagent.interview.review.WrongQuestionReviewService;
+import com.qian.qianaiagent.memory.ConversationAccess;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Schedulers;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executor;
 
@@ -37,6 +39,10 @@ public class InterviewChatController {
 
     @Resource
     private UserAbilityService userAbilityService;
+
+    /** 会话归属守卫 —— 写侧越权只能在这里挡（响应式线程里 UserContext 已失效） */
+    @Resource
+    private ConversationAccess conversationAccess;
 
     @Resource(name = "taskExecutor")
     private Executor taskExecutor;
@@ -66,6 +72,12 @@ public class InterviewChatController {
                 : chatId;
         // 🔴 在进入响应式流之前捕获 userId（ThreadLocal 在异步线程中不可用）
         final Long userId = UserContext.getCurrentUserId();
+        // 🔴 归属校验必须在这里做：流一旦进入 taskExecutor，UserContext 已被 JwtAuthFilter 清掉，
+        // 之后就再也没有用户身份可用（详见 FileBasedChatMemory 类注释的残留风险）
+        if (!conversationAccess.startSession(finalChatId, userId)) {
+            log.warn("🚫 拒绝接入他人会话: chatId={}, userId={}", finalChatId, userId);
+            return Flux.just("[ERROR] 无权访问该会话", "[DONE]");
+        }
         log.info("📨 收到对话请求: message={}, chatId={}, userId={}", message, finalChatId, userId);
         // 🔴 [P2] 使用 taskExecutor 线程池处理 SSE 流（替代 boundedElastic，线程参数可控）
         return quizApp.doUnifiedChat(message, finalChatId, userId)
@@ -108,6 +120,15 @@ public class InterviewChatController {
                 ? sourceChatId
                 : (finalChatId.startsWith("review_") ? finalChatId.substring(7) : finalChatId);
         final Long userId = UserContext.getCurrentUserId();
+        // 🔴 复习会话本身要认领；sourceChatId 只用来读原始面试的画像。
+        // 这里用 open 而非 manage：sourceChatId 可能是从前端 review_ 前缀推导出来的
+        // （页面刷新后 reviewSourceChatId 这个 ref 会丢失），并非真实会话，严格判定会误伤该功能。
+        if (!conversationAccess.startSession(finalChatId, userId)
+                || !conversationAccess.open(finalSourceId, userId)) {
+            log.warn("🚫 拒绝接入他人复习会话: chatId={}, sourceChatId={}, userId={}",
+                    finalChatId, finalSourceId, userId);
+            return Flux.just("[ERROR] 无权访问该会话", "[DONE]");
+        }
         log.info("📨 收到复习对话请求: message={}, chatId={}, sourceChatId={}",
                 message, finalChatId, finalSourceId);
         return wrongQuestionReviewService.doReviewChat(message, finalChatId, finalSourceId, userId)
@@ -125,6 +146,11 @@ public class InterviewChatController {
      */
     @GetMapping("/review/pool/{sourceChatId}")
     public Map<String, Object> getReviewPool(@PathVariable String sourceChatId) {
+        Long userId = UserContext.getCurrentUserId();
+        if (!conversationAccess.open(sourceChatId, userId)) {
+            log.warn("🚫 拒绝访问他人错题池: sourceChatId={}, userId={}", sourceChatId, userId);
+            return Map.of("topics", List.of(), "totalQuestions", 0);
+        }
         return wrongQuestionReviewService.getPoolPreview(sourceChatId);
     }
 }

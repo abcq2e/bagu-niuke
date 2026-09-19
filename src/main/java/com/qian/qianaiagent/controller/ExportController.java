@@ -15,6 +15,8 @@ import com.itextpdf.layout.properties.TextAlignment;
 import com.itextpdf.layout.properties.UnitValue;
 import com.itextpdf.kernel.colors.ColorConstants;
 import com.qian.qianaiagent.constant.FileConstant;
+import com.qian.qianaiagent.context.UserContext;
+import com.qian.qianaiagent.memory.ConversationAccess;
 import com.qian.qianaiagent.memory.FileBasedChatMemory;
 import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletResponse;
@@ -60,12 +62,18 @@ public class ExportController {
     @Resource(name = "fileBasedChatMemory")
     private FileBasedChatMemory chatMemory;
 
+    /** 会话归属守卫 */
+    @Resource
+    private ConversationAccess conversationAccess;
+
 
     @GetMapping("/pdf")
     public void exportPdf(@RequestParam String chatId, HttpServletResponse response) throws IOException {
-        // 1. 防路径穿越：chatId 会被拼成文件名，不能含 ".." 或路径分隔符
-        if (isUnsafeChatId(chatId)) {
-            writeJsonError(response, HttpServletResponse.SC_BAD_REQUEST, "无效的会话 ID");
+        // 1. 路径穿越 + 归属校验：chatId 会被拼成文件名，且不能导出别人的会话
+        //    （守卫内部已含 isUnsafeChatId，此处用 manage 做严格判定且不认领）
+        if (!conversationAccess.manage(chatId, UserContext.getCurrentUserId())) {
+            log.warn("🚫 拒绝导出他人会话: chatId={}", chatId);
+            writeJsonError(response, HttpServletResponse.SC_FORBIDDEN, "无权导出该会话");
             return;
         }
 
@@ -271,11 +279,6 @@ public class ExportController {
         return "application/octet-stream";
     }
 
-
-    private boolean isUnsafeChatId(String chatId) {
-        return chatId == null || chatId.isBlank()
-                || chatId.contains("..") || chatId.contains("/") || chatId.contains("\\");
-    }
 
     /** 尽力避免 null 正文触发 iText NPE */
     private String safeText(String text) {

@@ -53,9 +53,9 @@ public class TaskPlan {
     // TODO: private ___ createdAt;
     // TODO: private ___ status;
     // ============================================
-    private String goal;
+    private String goal;      //目标
     @Builder.Default
-    private List<TaskStep> steps = List.of();
-    private LocalDateTime createdAt;
-    private Integer status;
+    private List<TaskStep> steps = List.of();   //分几步执行
+    private LocalDateTime createdAt;    // 计划是什么时候生成的
+    private Integer status;    //计划整体是什么状态
 }

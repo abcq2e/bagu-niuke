@@ -21,6 +21,9 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
+import com.qian.qianaiagent.config.StorageProperties;
+import com.qian.qianaiagent.util.ChatIdValidator;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -29,6 +32,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Semaphore;
+import java.util.function.Predicate;
 
 /**
  * 运行期评估记录器 —— 把两个评估模块（Agent 的 {@link RubricScorer}、RAG 的 {@link RagasEvaluator}）
@@ -44,9 +48,6 @@ import java.util.concurrent.Semaphore;
 @Slf4j
 @Service
 public class EvaluationRecorder {
-
-    /** 评估结果存储目录（相对工作目录，镜像 .ability-profiles / data/chat-memory 的文件持久化风格） */
-    private static final String EVAL_DIR = "data/evals";
 
     /** 单会话记录上限，超出裁最旧 */
     private static final int MAX_RECORDS_PER_CHAT = 500;
@@ -73,14 +74,22 @@ public class EvaluationRecorder {
     /** 每个会话一个写锁，防止并发 read-modify-write 丢记录 */
     private final ConcurrentHashMap<String, Object> chatLocks = new ConcurrentHashMap<>();
 
-    private final Path evalDir = Paths.get(System.getProperty("user.dir"), EVAL_DIR);
+    /** 存储根目录配置（默认 root = user.dir，与改造前行为一致） */
+    @Resource
+    private StorageProperties storage;
+
+    /** 评估结果目录 —— 由 {@link #init()} 从配置解析，不再硬编码 user.dir */
+    private Path evalDir;
 
     @PostConstruct
     void init() {
+        evalDir = storage.evalsPath();
         try {
             Files.createDirectories(evalDir);
         } catch (IOException e) {
-            log.error("创建评估目录失败: {}", evalDir, e);
+            log.error("创建评估目录失败: {} —— 评估记录将无法落盘。"
+                    + "容器部署时若该目录未挂 volume，会创建成 root 属主导致写入静默失败: {}",
+                    evalDir, e.getMessage());
         }
     }
 
@@ -202,7 +211,21 @@ public class EvaluationRecorder {
      * 损坏的文件被跳过而不是让整个汇总失败。
      */
     public EvalSummary summarize() {
-        List<EvalRecord> all = readAllRecords();
+        return summarize(chatId -> true);
+    }
+
+    /**
+     * 同上，但只统计通过 {@code chatIdFilter} 的会话。
+     *
+     * <p>🔴 接口层必须传当前用户的会话集合：不传过滤器的版本会扫描整个
+     * {@code data/evals} 目录，等于把所有用户的评分聚合后返回给任何人。
+     *
+     * @param chatIdFilter 会话 ID 过滤器；传入的 chatId 保证非 null
+     */
+    public EvalSummary summarize(Predicate<String> chatIdFilter) {
+        List<EvalRecord> all = readAllRecords().stream()
+                .filter(r -> r.getChatId() != null && chatIdFilter.test(r.getChatId()))
+                .toList();
         List<EvalRecord> agentRecords = all.stream().filter(r -> "agent".equals(r.getType())).toList();
         List<EvalRecord> ragRecords = all.stream().filter(r -> "rag".equals(r.getType())).toList();
         TypeSummary agent = TypeSummary.builder()
@@ -313,9 +336,9 @@ public class EvaluationRecorder {
         return s.length() > max ? s.substring(0, max) + "…" : s;
     }
 
-    /** 防路径穿越：chatId 只保留安全字符 */
+    /** 防路径穿越：chatId 只保留安全字符（与复习游标共用同一份实现，避免规则漂移） */
     private String sanitize(String chatId) {
-        return (chatId == null || chatId.isBlank()) ? "unknown" : chatId.replaceAll("[^a-zA-Z0-9_-]", "_");
+        return ChatIdValidator.sanitize(chatId);
     }
 
     // ============================================================

@@ -139,6 +139,28 @@ management:
     os:
       enabled: true
 
+# 文件存储路径与保留策略
+# 🔴 root 刻意<b>不在此处配置</b>：它的默认值由 StorageProperties 的 Java 字段初始化器给出
+#    （System.getProperty("user.dir")），与改造前逐字节一致，不需要迁移任何数据。
+#    写成 root: ${user.dir} 会让默认值依赖占位符解析，解析失败时值会原样停留在
+#    字符串 "${user.dir}"，成为一个极难排查的路径错误。
+# 🔴 生产环境同样不要设 root：docker-compose.prod.yml 的 volume 挂载点
+#    （/app/.quiz-cursor、/app/data/chat-memory 等）是按 user.dir 设计的，
+#    改掉会让挂载点与实际读写路径分叉，数据会看似「凭空消失」。
+qian:
+  storage:
+    chat-memory: data/chat-memory
+    evals: data/evals
+    ability-profiles: .ability-profiles
+    quiz-cursor: .quiz-cursor
+    review-cursor: .review-cursor
+    retention:
+      enabled: false            # 会删数据，默认关闭，必须显式开启
+      max-conversations-per-user: 100
+      max-age-days: 0           # 0 = 不按时间限制
+      grace-period-minutes: 60  # 最近 60 分钟内修改过的会话永不清理
+      sweep-interval-ms: 3600000
+
 # JWT 配置
 jwt:
   secret: ${JWT_SECRET:your-local-jwt-secret-at-least-256-bits-long}

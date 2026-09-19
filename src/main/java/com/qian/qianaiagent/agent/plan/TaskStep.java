@@ -46,9 +46,9 @@ public class TaskStep {
     // TODO: private ___ expectedOutput;
     // TODO: private ___ status;
     // ============================================
-    private Integer stepNumber;
-    private String  description;
-    private String  expectedOutput;
+    private Integer stepNumber;   //第几步
+    private String  description;   //这一步要做什么
+    private String  expectedOutput;  //预期产出
     // private Integer status;  // ❌ 用 Integer 丢失了枚举的类型安全
     private StepStatus status;   // ✅ 用 enum 做状态标记
 
