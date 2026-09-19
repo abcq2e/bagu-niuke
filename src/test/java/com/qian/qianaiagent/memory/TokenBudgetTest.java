@@ -75,6 +75,38 @@ class TokenBudgetTest {
 
         List<Message> window = memory.get(chatId);
         assertTrue(window.stream().anyMatch(m -> m.getText().contains("【方向切换】")),
-                "token 裁剪同样不得丢弃锚点");
+                "token 裁剪不得丢弃锚点");
+        // 🔴 必须同时确认「确实裁剪过」，否则裁剪整体失效时本用例会假绿
+        assertTrue(window.size() < msgs.size(),
+                "应发生了裁剪，实际窗口 " + window.size() + " 条 / 原 " + msgs.size() + " 条");
+    }
+
+    @Test
+    void keepsNewestMessageEvenWhenItAloneExceedsBudget() {
+        // 最新那条自身超预算时也必须保留 —— 否则一次超长检索结果就能让对话尾巴整个消失
+        SummarizingChatMemory memory = memory(1000, 300);
+        String chatId = "newest-big";
+        memory.add(chatId, List.of(
+                new UserMessage("old-small"),
+                new UserMessage("x".repeat(3000))));
+
+        List<Message> window = memory.get(chatId);
+        assertEquals(1, window.size(), "应只保留最新那条，实际: " + window.size());
+        assertTrue(window.get(0).getText().startsWith("x"), "保留的必须是最新的那条");
+    }
+
+    @Test
+    void windowStaysContiguousNoGapInMiddle() {
+        // 中间那条超预算时，窗口必须是连续后缀，不能在中间挖空
+        SummarizingChatMemory memory = memory(1000, 200);
+        String chatId = "gap";
+        memory.add(chatId, List.of(
+                new UserMessage("f".repeat(120)),     // 约 104 token
+                new UserMessage("m".repeat(2000)),    // 约 1734 token，放不下
+                new UserMessage("l".repeat(60))));    // 约 52 token
+
+        List<Message> window = memory.get(chatId);
+        assertEquals(1, window.size(), "应在遇到放不下的消息时停止，实际: " + window.size());
+        assertEquals("l".repeat(60), window.get(0).getText(), "应保留最新的连续后缀");
     }
 }

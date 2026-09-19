@@ -144,10 +144,17 @@ public class SummarizingChatMemory implements ChatMemory {
     }
 
     /**
-     * 按 token 预算裁剪：从最新往旧累加，超预算的普通消息丢弃。
+     * 按 token 预算裁剪。
      * <p>
-     * 🔴 受保护消息不计入丢弃 —— 但也不 break，因为锚点通常在最早处，
-     * break 会让它第一个被丢掉，正好与保护意图相反。
+     * 两条规则：
+     * <ul>
+     *   <li>受保护消息（{@code 【方向切换】} 锚点）无条件保留 —— 它们通常在最早处，
+     *       一旦丢弃，AI 会拿旧方向的题目点评新方向的回答</li>
+     *   <li>普通消息取<b>连续后缀</b>：从最新往旧累加，第一条放不下就<b>停止</b>。
+     *       不能跳过它继续往旧处收 —— 那会在窗口中间挖空，甚至「丢掉最新的、留下更旧的」</li>
+     * </ul>
+     * 唯一的例外是<b>最新那一条</b>：即使它自身就超预算也保留，
+     * 否则一次超长检索结果就能让整个对话尾巴消失。
      */
     private List<Message> trimToTokenBudget(List<Message> messages) {
         if (maxTokens <= 0) {
@@ -158,19 +165,39 @@ public class SummarizingChatMemory implements ChatMemory {
             return messages;
         }
 
-        List<Message> kept = new ArrayList<>();
+        List<Message> protectedMsgs = new ArrayList<>();
+        int reserved = 0;
+        for (Message m : messages) {
+            if (ProtectedMessages.isProtected(m)) {
+                protectedMsgs.add(m);
+                reserved += estimateTokens(m.getText());
+            }
+        }
+
+        int budget = maxTokens - reserved;
+        List<Message> recent = new ArrayList<>();
         int used = 0;
         for (int i = messages.size() - 1; i >= 0; i--) {
             Message m = messages.get(i);
-            if (!ProtectedMessages.isProtected(m) && used + estimateTokens(m.getText()) > maxTokens) {
-                continue;
+            if (ProtectedMessages.isProtected(m)) {
+                continue;   // 已在 protectedMsgs 中单独保留
             }
-            kept.add(m);
-            used += estimateTokens(m.getText());
+            int cost = estimateTokens(m.getText());
+            // recent 为空时无条件收下最新那条，避免整个窗口被裁空
+            if (!recent.isEmpty() && used + cost > budget) {
+                break;
+            }
+            recent.add(m);
+            used += cost;
         }
-        Collections.reverse(kept);
-        log.info("token 预算裁剪: {} 条 → {} 条（预算 {} token，实际约 {}）",
-                messages.size(), kept.size(), maxTokens, used);
+        Collections.reverse(recent);
+
+        List<Message> kept = new ArrayList<>(protectedMsgs);
+        kept.addAll(recent);
+        if (kept.size() < messages.size()) {
+            log.info("token 预算裁剪: {} 条 → {} 条（预算 {} token，实际约 {}）",
+                    messages.size(), kept.size(), maxTokens, used + reserved);
+        }
         return kept;
     }
 
