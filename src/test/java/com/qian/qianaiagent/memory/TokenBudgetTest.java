@@ -24,6 +24,38 @@ class TokenBudgetTest {
                 new FileBasedChatMemory(tempDir.toString()), null, maxMessages, maxTokens);
     }
 
+    /** 指定单条上限的窗口。 */
+    private SummarizingChatMemory memory(int maxMessages, int maxTokens, int maxCharsPerMessage) {
+        return new SummarizingChatMemory(
+                new FileBasedChatMemory(tempDir.toString()), null,
+                maxMessages, maxTokens, maxCharsPerMessage);
+    }
+
+    @Test
+    void capsSingleOversizedMessageEvenWhenWithinTokenBudget() {
+        // 关键：token 预算很大（不会触发裁剪），封顶仍必须生效
+        SummarizingChatMemory memory = memory(1000, 100000, 500);
+        String chatId = "oversize";
+        memory.add(chatId, List.of(new UserMessage("x".repeat(5000))));
+
+        List<Message> window = memory.get(chatId);
+        assertEquals(1, window.size());
+        String text = window.get(0).getText();
+        assertTrue(text.length() < 5000, "超长消息应被截断，实际 " + text.length());
+        assertTrue(text.endsWith("…[内容过长，已截断]"), "应带截断标记，实际尾部: "
+                + text.substring(Math.max(0, text.length() - 30)));
+    }
+
+    @Test
+    void doesNotTouchMessageWithinCap() {
+        SummarizingChatMemory memory = memory(1000, 100000, 500);
+        String chatId = "within-cap";
+        memory.add(chatId, List.of(new UserMessage("short")));
+
+        List<Message> window = memory.get(chatId);
+        assertEquals("short", window.get(0).getText(), "未超上限的消息应原样返回");
+    }
+
     @Test
     void estimatesTokensWithSafetyMargin() {
         assertEquals(0, SummarizingChatMemory.estimateTokens(null));

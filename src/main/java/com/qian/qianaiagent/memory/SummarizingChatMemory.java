@@ -2,8 +2,11 @@ package com.qian.qianaiagent.memory;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
+import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -37,6 +40,15 @@ public class SummarizingChatMemory implements ChatMemory {
      */
     private static final int DEFAULT_MAX_TOKENS = 8000;
 
+    /**
+     * 默认单条消息字符上限。token 预算拦不住「一条就超预算」的消息 ——
+     * 「最新一条即使超预算也保留」的规则会让它原样送进模型，因此需要单条封顶兜底。
+     */
+    private static final int DEFAULT_MAX_CHARS_PER_MESSAGE = 12000;
+
+    /** 截断标记 —— 让模型和人都能看出这里被裁过。 */
+    private static final String TRUNCATION_SUFFIX = "\n…[内容过长，已截断]";
+
     /** 中文约 1.5 字/token 的折中估计；不引入 tokenizer 库，避免虚假的精确感。 */
     private static final double CHARS_PER_TOKEN = 1.5;
     /** 安全余量：宁可估多，不可估少。 */
@@ -46,6 +58,7 @@ public class SummarizingChatMemory implements ChatMemory {
     private final ConversationSummarizer summarizer;
     private final int maxMessages;
     private final int maxTokens;
+    private final int maxCharsPerMessage;
 
     /**
      * 估算一段文本占用的 token 数。
@@ -74,12 +87,18 @@ public class SummarizingChatMemory implements ChatMemory {
     }
     public SummarizingChatMemory(FileBasedChatMemory delegate, ConversationSummarizer summarizer,
                                   int maxMessages, int maxTokens) {
+        this(delegate, summarizer, maxMessages, maxTokens, DEFAULT_MAX_CHARS_PER_MESSAGE);
+    }
+    public SummarizingChatMemory(FileBasedChatMemory delegate, ConversationSummarizer summarizer,
+                                  int maxMessages, int maxTokens, int maxCharsPerMessage) {
         this.delegate = delegate;
         this.summarizer = summarizer;
         this.maxMessages = maxMessages;
         this.maxTokens = maxTokens;
-        log.info("SummarizingChatMemory 初始化完成，窗口: {} 条消息 / {} token",
-                maxMessages, maxTokens > 0 ? maxTokens : "不限");
+        this.maxCharsPerMessage = maxCharsPerMessage;
+        log.info("SummarizingChatMemory 初始化完成，窗口: {} 条消息 / {} token / 单条上限 {} 字",
+                maxMessages, maxTokens > 0 ? maxTokens : "不限",
+                maxCharsPerMessage > 0 ? maxCharsPerMessage : "不限");
     }
 
     /**
@@ -157,17 +176,27 @@ public class SummarizingChatMemory implements ChatMemory {
      * 否则一次超长检索结果就能让整个对话尾巴消失。
      */
     private List<Message> trimToTokenBudget(List<Message> messages) {
-        if (maxTokens <= 0) {
+        if (maxTokens <= 0 && maxCharsPerMessage <= 0) {
             return messages;
         }
-        int total = messages.stream().mapToInt(m -> estimateTokens(m.getText())).sum();
+        // 🔴 先做单条封顶：否则一条超长消息会原样送进模型，
+        //    「最新一条即使超预算也保留」的规则会让整个预算形同虚设
+        List<Message> capped = new ArrayList<>(messages.size());
+        for (Message m : messages) {
+            capped.add(capMessageLength(m));
+        }
+
+        if (maxTokens <= 0) {
+            return capped;
+        }
+        int total = capped.stream().mapToInt(m -> estimateTokens(m.getText())).sum();
         if (total <= maxTokens) {
-            return messages;
+            return capped;
         }
 
         List<Message> protectedMsgs = new ArrayList<>();
         int reserved = 0;
-        for (Message m : messages) {
+        for (Message m : capped) {
             if (ProtectedMessages.isProtected(m)) {
                 protectedMsgs.add(m);
                 reserved += estimateTokens(m.getText());
@@ -177,8 +206,8 @@ public class SummarizingChatMemory implements ChatMemory {
         int budget = maxTokens - reserved;
         List<Message> recent = new ArrayList<>();
         int used = 0;
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message m = messages.get(i);
+        for (int i = capped.size() - 1; i >= 0; i--) {
+            Message m = capped.get(i);
             if (ProtectedMessages.isProtected(m)) {
                 continue;   // 已在 protectedMsgs 中单独保留
             }
@@ -194,11 +223,44 @@ public class SummarizingChatMemory implements ChatMemory {
 
         List<Message> kept = new ArrayList<>(protectedMsgs);
         kept.addAll(recent);
-        if (kept.size() < messages.size()) {
+        if (kept.size() < capped.size()) {
             log.info("token 预算裁剪: {} 条 → {} 条（预算 {} token，实际约 {}）",
-                    messages.size(), kept.size(), maxTokens, used + reserved);
+                    capped.size(), kept.size(), maxTokens, used + reserved);
         }
         return kept;
+    }
+
+    /**
+     * 单条消息长度封顶。
+     * <p>
+     * 只重建结构简单的类型（USER / SYSTEM / 无 toolCalls 的 ASSISTANT）——
+     * {@code TOOL} 消息与带 {@code toolCalls} 的 ASSISTANT 结构复杂，
+     * 重建会丢掉工具调用信息，宁可放过也不破坏。
+     */
+    private Message capMessageLength(Message message) {
+        if (maxCharsPerMessage <= 0) {
+            return message;
+        }
+        String text = message.getText();
+        if (text == null || text.length() <= maxCharsPerMessage) {
+            return message;
+        }
+
+        String capped = text.substring(0, maxCharsPerMessage) + TRUNCATION_SUFFIX;
+        MessageType type = message.getMessageType();
+        if (type == MessageType.USER) {
+            return new UserMessage(capped);
+        }
+        if (type == MessageType.SYSTEM) {
+            return new SystemMessage(capped);
+        }
+        if (type == MessageType.ASSISTANT) {
+            if (message instanceof AssistantMessage am && !am.getToolCalls().isEmpty()) {
+                return message;     // 带工具调用的不能重建
+            }
+            return new AssistantMessage(capped);
+        }
+        return message;             // TOOL 等：不动
     }
 
     @Override

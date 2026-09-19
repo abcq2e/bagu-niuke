@@ -42,6 +42,6 @@ public class ChatMemoryConfig {
                                   MemoryProperties memoryProperties) {
         MemoryProperties.Window window = memoryProperties.getWindow();
         return new SummarizingChatMemory(fileBasedChatMemory, conversationSummarizer,
-                window.getMaxMessages(), window.getMaxTokens());
+                window.getMaxMessages(), window.getMaxTokens(), window.getMaxCharsPerMessage());
     }
 }

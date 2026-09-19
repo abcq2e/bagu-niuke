@@ -45,5 +45,16 @@ public class MemoryProperties {
         public void setMaxTokens(int maxTokens) {
             this.maxTokens = maxTokens;
         }
+
+        /** 单条消息最大字符数，超出部分截断。<= 0 表示不限制。 */
+        private int maxCharsPerMessage = 12000;
+
+        public int getMaxCharsPerMessage() {
+            return maxCharsPerMessage;
+        }
+
+        public void setMaxCharsPerMessage(int maxCharsPerMessage) {
+            this.maxCharsPerMessage = maxCharsPerMessage;
+        }
     }
 }
