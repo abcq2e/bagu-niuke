@@ -1,8 +1,11 @@
 package com.qian.qianaiagent.interview.progress;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -27,8 +30,15 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class ActiveSpecManager {
 
-    /** 每个会话 -> 当前生效的项目描述文本 */
-    private final Map<String, String> activeSpecs = new ConcurrentHashMap<>();
+    /** 每个会话 -> 当前生效的项目描述 + 最后访问时间 */
+    private final Map<String, Entry> activeSpecs = new ConcurrentHashMap<>();
+
+    /** 空闲多久后清理。对齐 QuizApp.evictExpiredEntries 的既有口径（2 小时）。 */
+    private static final Duration IDLE_TTL = Duration.ofHours(2);
+
+    /** 项目描述 + 最后访问时间。 */
+    private record Entry(String spec, long lastAccess) {
+    }
 
     /**
      * 更新或覆盖当前项目描述（天然覆盖语义）
@@ -40,10 +50,10 @@ public class ActiveSpecManager {
         if (chatId == null || spec == null || spec.isBlank()) {
             return;
         }
-        String old = activeSpecs.put(chatId, spec.trim());
+        Entry old = activeSpecs.put(chatId, new Entry(spec.trim(), System.currentTimeMillis()));
         if (old != null) {
             log.info("🔄 项目描述已覆盖: chatId={}, oldLen={}, newLen={}",
-                    chatId, old.length(), spec.length());
+                    chatId, old.spec().length(), spec.length());
         } else {
             log.info("📋 新项目描述已设置: chatId={}, specLen={}", chatId, spec.length());
         }
@@ -53,7 +63,17 @@ public class ActiveSpecManager {
      * 获取当前项目描述，用于场景不关心是否有描述时
      */
     public String getSpec(String chatId) {
-        return activeSpecs.get(chatId);
+        Entry entry = activeSpecs.get(chatId);
+        if (entry == null) {
+            return null;
+        }
+        touch(chatId, entry);
+        return entry.spec();
+    }
+
+    /** 续期 —— 被访问过就不算空闲。 */
+    private void touch(String chatId, Entry entry) {
+        activeSpecs.replace(chatId, entry, new Entry(entry.spec(), System.currentTimeMillis()));
     }
 
     /**
@@ -71,7 +91,7 @@ public class ActiveSpecManager {
      * @return 空字符串表示无可注入内容
      */
     public String buildSpecPrompt(String chatId) {
-        String spec = activeSpecs.get(chatId);
+        String spec = getSpec(chatId);
         if (spec == null || spec.isBlank()) {
             return "";
         }
@@ -117,8 +137,8 @@ public class ActiveSpecManager {
      * 判断指定会话是否有有效项目描述
      */
     public boolean hasSpec(String chatId) {
-        String spec = activeSpecs.get(chatId);
-        return spec != null && !spec.isBlank();
+        Entry entry = activeSpecs.get(chatId);
+        return entry != null && !entry.spec().isBlank();
     }
 
     /**
@@ -127,5 +147,35 @@ public class ActiveSpecManager {
     public void remove(String chatId) {
         activeSpecs.remove(chatId);
         log.info("🗑️ 已清除项目描述: chatId={}", chatId);
+    }
+
+    /**
+     * 清理空闲超过 {@code ttl} 的条目。
+     * <p>
+     * 抽成纯方法（注入 {@code now}）以便单测，<b>不</b>把 {@code System.currentTimeMillis()}
+     * 写死在内部 —— 那会让 2 小时的等待变成测试不可承受的成本。
+     *
+     * @return 实际清理的条目数
+     */
+    public int evictExpired(long now, Duration ttl) {
+        if (ttl == null || ttl.isNegative()) {
+            return 0;
+        }
+        long cutoff = now - ttl.toMillis();
+        List<String> expired = activeSpecs.entrySet().stream()
+                .filter(e -> e.getValue().lastAccess() < cutoff)
+                .map(Map.Entry::getKey)
+                .toList();
+        expired.forEach(activeSpecs::remove);
+        if (!expired.isEmpty()) {
+            log.info("🧹 清理空闲项目描述 {} 个", expired.size());
+        }
+        return expired.size();
+    }
+
+    /** 定时清理空闲条目。间隔可配，默认 30 分钟。 */
+    @Scheduled(fixedDelayString = "${qian.memory.active-spec.evict-interval-ms:1800000}")
+    public void evictExpiredScheduled() {
+        evictExpired(System.currentTimeMillis(), IDLE_TTL);
     }
 }
