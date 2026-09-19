@@ -62,4 +62,16 @@ class RubricResultValidatorTest {
         r.setOverallComment("  ");
         assertTrue(RubricResultValidator.validate(r).isPresent());
     }
+
+    @Test
+    void parseFailedDefaultsToFalse() {
+        assertFalse(valid().isParseFailed(), "新建结果默认未标记失败");
+    }
+
+    @Test
+    void parseFailedIsSettable() {
+        RubricScorer.RubricResult r = valid();
+        r.setParseFailed(true);
+        assertTrue(r.isParseFailed());
+    }
 }

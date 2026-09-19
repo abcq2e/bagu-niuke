@@ -288,7 +288,10 @@ public class RubricScorer {
             if (RubricResultValidator.validate(retried).isEmpty()) {
                 result = retried;
             } else {
-                log.error("重试后仍不合规，保留首次结果");
+                // 🔴 首次与重试都不合规：保留首次（可能比哨兵值更有信息量），
+                //    但必须打标记 —— 否则这份不可信评分会与合法评分混在一起落盘
+                log.error("重试后仍不合规，保留首次结果并标记 parseFailed");
+                result.setParseFailed(true);
             }
         }
         // 第 3 步：幻觉专项检测
@@ -423,6 +426,10 @@ public class RubricScorer {
         /** 幻觉率 [0, 1]（由 detectHallucination 计算，不属于 LLM 评分维度） */
         @Builder.Default
         private double hallucinationRate = 0.0;
+
+        /** 评分结果未通过语义校验（首次不合规且重试仍不合规）。下游据此识别「不可信评分」。 */
+        @Builder.Default
+        private boolean parseFailed = false;
 
         /** 是否通过（总分 >= 60） */
         public boolean isPassed() {
