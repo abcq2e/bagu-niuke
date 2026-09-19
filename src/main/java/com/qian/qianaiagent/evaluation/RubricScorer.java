@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Rubric 评分器 —— LLM-as-Judge，让大模型当裁判。
@@ -275,8 +276,21 @@ public class RubricScorer {
         }
         // 第 1 步：构建评分 Prompt
         String prompt = buildScoringPrompt(query, trace);
-        // 第 2 步：调 LLM 打分
+        // 第 2 步：调 LLM 打分；结果不合规时带失败原因重试一次
         RubricResult result = callLLMAndParse(prompt);
+        Optional<String> problem = RubricResultValidator.validate(result);
+        if (problem.isPresent()) {
+            log.warn("评分结果不合规（{}），重试一次", problem.get());
+            String retryPrompt = prompt
+                    + "\n\n⚠️ 上一次输出不合规：" + problem.get()
+                    + "\n请重新输出严格符合上述字段与约束的 JSON。";
+            RubricResult retried = callLLMAndParse(retryPrompt);
+            if (RubricResultValidator.validate(retried).isEmpty()) {
+                result = retried;
+            } else {
+                log.error("重试后仍不合规，保留首次结果");
+            }
+        }
         // 第 3 步：幻觉专项检测
         String finalAnswer = extractFinalAnswer(trace);
         List<String> toolResults = extractToolResults(trace);
