@@ -2,8 +2,6 @@ package com.qian.qianaiagent.interview.progress;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.Set;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -38,13 +36,5 @@ class AskedPointTrackerTest {
         AskedPointTracker.TurnDecision d = tracker.onUserTurn("c1", AskedPointTracker.TurnIntent.SWITCH_OR_NEXT).decision();
         assertEquals(AskedPointTracker.TurnDecision.END_POINT, d);
         assertTrue(tracker.getAskedPointIds("c1").contains("pid-2"));
-    }
-
-    @Test
-    void hydrateFromPersistedIds() {
-        AskedPointTracker tracker = new AskedPointTracker();
-        tracker.hydrateAsked("c1", Set.of("a", "b"));
-        assertTrue(tracker.isAsked("c1", "a"));
-        assertFalse(tracker.isAsked("c1", "c"));
     }
 }

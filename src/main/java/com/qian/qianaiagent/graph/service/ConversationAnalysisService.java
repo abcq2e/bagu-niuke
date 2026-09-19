@@ -268,7 +268,12 @@ public class ConversationAnalysisService {
     }
 
     /**
-     * 找上一条 AI 回复（作为 REPLIES_TO 的目标）
+     * 找上一条 AI 回复（作为 REPLIES_TO 的目标）。
+     *
+     * <p>⚠️ <b>当前恒返回 null</b> —— 是占位实现。因此 {@code REPLIES_TO} 关系实际
+     * 从未建立，依赖它的 {@code analyzeFollowUpDepth} 查询会返回空结果。
+     * 保留原因：图谱链路整体尚未接入对话主流程（见 {@code ConversationGraphAdvisor}），
+     * 待接入时一并实现。
      */
     private MessageNode findPreviousAssistant(String conversationId) {
         // 简化实现：返回 null 表示新的对话轮次

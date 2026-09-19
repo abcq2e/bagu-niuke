@@ -9,6 +9,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 会话级已考知识点 + 追问配额。
+ *
+ * <p>⚠️ <b>当前无生产调用者</b>（仅 {@code AskedPointTrackerTest} 引用）。
+ * 保留原因：追问配额是完整实现的功能，等待接入出题链路；
+ * 若确定不再需要，可连同测试一并删除。
  */
 @Component
 public class AskedPointTracker {
@@ -51,11 +55,6 @@ public class AskedPointTracker {
 
     private SessionPoints state(String chatId) {
         return sessions.computeIfAbsent(chatId, k -> new SessionPoints());
-    }
-
-    public void hydrateAsked(String chatId, Set<String> ids) {
-        if (ids == null || ids.isEmpty()) return;
-        state(chatId).askedPointIds.addAll(ids);
     }
 
     public void beginPoint(String chatId, String pointId, String topic, String dimension) {

@@ -25,6 +25,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiConsumer;
 import com.qian.qianaiagent.catalog.DirectionCatalog;
+import com.qian.qianaiagent.config.StorageProperties;
 import com.qian.qianaiagent.knowledge.TopicDimensions;
 
 /**
@@ -101,6 +102,10 @@ public class UserAbilityService {
 
     private Path profileDir;
 
+    /** 统一存储路径配置（默认 root = user.dir，与改造前行为一致） */
+    @Resource
+    private StorageProperties storage;
+
     /**
      * 🔴 [Hotfix-驻留轮次] 设置回答质量回调。
      * 由 QuizApp 在初始化时注入，将评分结果同步到 TopicRotationService 的驻留控制。
@@ -137,7 +142,8 @@ public class UserAbilityService {
         if (customProfileDir != null && !customProfileDir.isBlank()) {
             profileDir = Paths.get(customProfileDir);
         } else {
-            profileDir = Paths.get(System.getProperty("user.dir"), PROFILE_DIR);
+            // 走统一存储配置；默认仍解析为 user.dir/.ability-profiles，行为不变
+            profileDir = storage.abilityProfilesPath();
         }
         try {
             Files.createDirectories(profileDir);
@@ -424,17 +430,6 @@ public class UserAbilityService {
         return profileDir.resolve(USER_PROFILE_PREFIX + userId + PROFILE_FILE_SUFFIX);
     }
 
-    private void saveToUserFile(Long userId, UserAbilityProfile profile) {
-        try {
-            Path path = userProfilePath(userId);
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(profile);
-            Files.writeString(path, json, StandardCharsets.UTF_8);
-            log.debug("💾 用户画像已保存: {}", path.toAbsolutePath());
-        } catch (Exception e) {
-            log.warn("保存用户画像到文件失败: {}", e.getMessage());
-        }
-    }
-
     private UserAbilityProfile loadFromUserFile(Long userId) {
         try {
             Path path = userProfilePath(userId);
@@ -448,15 +443,6 @@ public class UserAbilityService {
         return null;
     }
 
-    private void saveToUserRedis(Long userId, UserAbilityProfile profile) {
-        try {
-            String key = REDIS_KEY_PREFIX + "user:" + userId;
-            redisTemplate.opsForValue().set(key, profile, REDIS_TTL_DAYS, TimeUnit.DAYS);
-        } catch (Exception e) {
-            log.debug("Redis 不可用，跳过: {}", e.getMessage());
-        }
-    }
-
     private UserAbilityProfile loadFromUserRedis(Long userId) {
         try {
             String key = REDIS_KEY_PREFIX + "user:" + userId;
@@ -468,24 +454,6 @@ public class UserAbilityService {
             log.debug("Redis 不可用（不影响主流程）: {}", e.getMessage());
         }
         return null;
-    }
-
-    private void deleteUserProfileFile(Long userId) {
-        try {
-            Path path = userProfilePath(userId);
-            Files.deleteIfExists(path);
-        } catch (Exception e) {
-            log.warn("删除用户画像文件失败: {}", e.getMessage());
-        }
-    }
-
-    private void deleteFromUserRedis(Long userId) {
-        try {
-            String key = REDIS_KEY_PREFIX + "user:" + userId;
-            redisTemplate.delete(key);
-        } catch (Exception e) {
-            log.debug("Redis 不可用，跳过: {}", e.getMessage());
-        }
     }
 
     /**
@@ -1308,8 +1276,10 @@ public class UserAbilityService {
     /**
      * 获取画像总结文本（使用展示清洗后的画像）
      */
-    public String buildSummary(String chatId) {
-        UserAbilityProfile profile = getDisplayProfile(chatId, null);
+    public String buildSummary(String chatId, Long userId) {
+        // 🔴 userId 必须一路传下来：传 null 会让 resolveKey 回退成 chatId 作为存储 key，
+        // 从而读到别人 profile_{chatId}.json 里的画像
+        UserAbilityProfile profile = getDisplayProfile(chatId, userId);
         if (profile.getTopicScores().isEmpty()) return "暂无考察数据";
 
         StringBuilder sb = new StringBuilder();
@@ -1331,13 +1301,13 @@ public class UserAbilityService {
     /**
      * 生成 AI 学习建议（使用展示清洗后的画像）
      */
-    public String generateAISuggestion(String chatId) {
-        UserAbilityProfile profile = getDisplayProfile(chatId, null);
+    public String generateAISuggestion(String chatId, Long userId) {
+        UserAbilityProfile profile = getDisplayProfile(chatId, userId);
         if (profile.getTopicScores().isEmpty()) return "暂无考察数据，无法生成建议。";
 
         StringBuilder prompt = new StringBuilder();
         prompt.append("你是一位资深技术面试教练。基于以下候选人的技术考察数据，生成个性化学习建议。\n\n");
-        prompt.append(buildSummary(chatId));
+        prompt.append(buildSummary(chatId, userId));
         prompt.append("\n请给出针对性的学习建议（200字以内），指出优先攻克的方向和具体知识点。");
 
         try {
