@@ -17,7 +17,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class AskedPointTracker {
 
-    public static final int DEFAULT_FOLLOW_UP = 1;
+    /** 每个知识点的追问配额。注意 {@code onUserTurn} 是「先减后判」，
+     *  所以这里写 2 才对应「允许 1 次追问 + 1 次收尾」。 */
+    public static final int DEFAULT_FOLLOW_UP = 2;
 
     public enum TurnIntent {
         ANSWER,
