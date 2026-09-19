@@ -5,9 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.messages.UserMessage;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -52,5 +54,46 @@ class TopicMemoryTrimmerTest {
         TopicMemoryTrimmer trimmer = new TopicMemoryTrimmer(memory);
         String stem = TopicMemoryTrimmer.extractLastExamStem(memory.get(chatId));
         assertEquals("讲下覆盖索引，覆盖索引是怎么用的？", stem);
+    }
+
+    @Test
+    void trimToRecentNKeepsTopicSwitchMarker() {
+        FileBasedChatMemory memory = new FileBasedChatMemory(tempDir.toString());
+        String chatId = "trim-marker";
+        memory.add(chatId, List.of(
+                new SystemMessage("【方向切换】旧方向结束。当前方向：【JVM】"),
+                new SystemMessage("【本轮考题】\nJVM\nGC 算法有哪些？"),
+                new UserMessage("u1"),
+                new AssistantMessage("a1"),
+                new UserMessage("u2"),
+                new AssistantMessage("a2")));
+
+        TopicMemoryTrimmer trimmer = new TopicMemoryTrimmer(memory);
+        trimmer.trimToRecentN(chatId, 4);
+
+        List<Message> after = memory.get(chatId);
+        assertEquals(4, after.size(), "总数仍应为 n，实际: " + after.size());
+        assertTrue(after.stream().anyMatch(m -> m.getText().contains("【方向切换】")),
+                "【方向切换】锚点不得被 trimToRecentN 丢弃");
+    }
+
+    @Test
+    void trimToRecentNUnchangedWhenNoMarker() {
+        FileBasedChatMemory memory = new FileBasedChatMemory(tempDir.toString());
+        String chatId = "trim-plain";
+        List<Message> msgs = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
+            msgs.add(new UserMessage("m" + i));
+        }
+        memory.add(chatId, msgs);
+
+        TopicMemoryTrimmer trimmer = new TopicMemoryTrimmer(memory);
+        trimmer.trimToRecentN(chatId, 4);
+
+        List<Message> after = memory.get(chatId);
+        assertEquals(4, after.size());
+        // 无受保护消息时行为不变：保留最新 4 条
+        assertEquals("m4", after.get(0).getText());
+        assertEquals("m7", after.get(3).getText());
     }
 }

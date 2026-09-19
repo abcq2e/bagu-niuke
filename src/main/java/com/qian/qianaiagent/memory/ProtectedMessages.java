@@ -18,16 +18,16 @@ import java.util.List;
  * {@code 【方向切换】} 一旦丢失，AI 会拿旧方向的题目点评新方向的回答 ——
  * 这是 {@code TopicMemoryTrimmer} 整个类存在的原因。
  */
-final class ProtectedMessages {
+public final class ProtectedMessages {
 
     /** 方向切换标记。改这里等于改所有保留语义，务必同步 {@code TopicMemoryTrimmer}。 */
-    static final String TOPIC_SWITCH_MARKER = "【方向切换】";
+    public static final String TOPIC_SWITCH_MARKER = "【方向切换】";
 
     private ProtectedMessages() {
     }
 
     /** 该消息是否受保护（任何截断都不得丢弃）。 */
-    static boolean isProtected(Message message) {
+    public static boolean isProtected(Message message) {
         String text = message != null ? message.getText() : null;
         return text != null && text.contains(TOPIC_SWITCH_MARKER);
     }
@@ -38,7 +38,7 @@ final class ProtectedMessages {
      * 受保护消息排在结果最前（它们语义上就属于会话开头），其余配额按「从新到旧」填充。
      * 若受保护消息自身已超过 {@code max}，只保留最新的 {@code max} 条。
      */
-    static List<Message> truncate(List<Message> messages, int max) {
+    public static List<Message> truncate(List<Message> messages, int max) {
         if (messages.size() <= max) {
             return new ArrayList<>(messages);
         }

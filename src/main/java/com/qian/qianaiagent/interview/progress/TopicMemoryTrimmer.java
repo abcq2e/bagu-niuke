@@ -1,6 +1,7 @@
 package com.qian.qianaiagent.interview.progress;
 
 import com.qian.qianaiagent.memory.FileBasedChatMemory;
+import com.qian.qianaiagent.memory.ProtectedMessages;
 import com.qian.qianaiagent.memory.SummarizingChatMemory;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.memory.ChatMemory;
@@ -156,7 +157,10 @@ public class TopicMemoryTrimmer {
         try {
             List<Message> all = fileBasedChatMemory.get(chatId);
             if (all == null || all.size() <= n) return all == null ? 0 : all.size();
-            List<Message> recent = new ArrayList<>(all.subList(all.size() - n, all.size()));
+            // 🔴 复用受保护消息判定：裸 subList(size-n, size) 会把开头的【方向切换】锚点丢掉，
+            //    而它是换方向后唯一的方向告知 —— 丢了 AI 会拿旧方向的题目点评新方向的回答。
+            //    前两层（摘要/存储截断）都保护它，这一层没理由不保护。
+            List<Message> recent = ProtectedMessages.truncate(all, n);
             fileBasedChatMemory.replaceMessages(chatId, recent);
             // 🔴 [Bug修复] 截断后必须清除摘要缓存，否则 SummarizingChatMemory 可能
             // 通过旧摘要向 AI 泄漏已被截断的历史内容（含旧题目和旧点评）。
