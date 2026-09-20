@@ -6,6 +6,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * 限流注解
  *
+ * <p>🔴 <b>当前标注了也不生效</b>：切面 {@code RateLimitAspect} 是 Task 13 的练习骨架，
+ * {@code handleRateLimit} 直接 {@code joinPoint.proceed()} 放行。全项目 4 处使用点
+ * （{@code AgentChatController}、{@code InterviewChatController} 两处、{@code UserController}）
+ * 均<b>没有任何限流保护</b>，其中包含登录防爆破。切勿据此认为已有防护。
+ *
  * ===== 🎯 Task 13 第一部分: 这个文件已生成，你只需要理解它 =====
  * 在需要限流的方法上加 @RateLimit，AOP 切面会自动拦截并计数。
  * <p>

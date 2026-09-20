@@ -65,6 +65,7 @@ public class AgentChatController {
      * @param chatId  会话 ID（可选，不传则自动生成新会话）
      * @return SSE 流式响应（每步执行结果作为独立事件推送）
      */
+    // ⚠️ 该注解当前不生效，见 RateLimit javadoc（Task 13 练习未完成）
     @RateLimit(maxRequests = 10, timeWindow = 60)
     @GetMapping(value = "/agent/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter doAgentChat(@RequestParam String message,

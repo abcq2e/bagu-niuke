@@ -56,6 +56,7 @@ public class InterviewChatController {
      * @param chatId  会话 ID（可选，不传则自动生成）
      * @return SSE 流式响应
      */
+    // ⚠️ 该注解当前不生效，见 RateLimit javadoc（Task 13 练习未完成）
     @RateLimit(maxRequests = 10, timeWindow = 60)
     @GetMapping(value = "/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> doChat(@RequestParam String message,
@@ -101,6 +102,7 @@ public class InterviewChatController {
      * @param chatId       复习会话 ID（review_xxx）
      * @param sourceChatId 原始面试 chatId（读画像用）
      */
+    // ⚠️ 该注解当前不生效，见 RateLimit javadoc（Task 13 练习未完成）
     @RateLimit(maxRequests = 10, timeWindow = 60)
     @GetMapping(value = "/review/chat", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> doReviewChat(@RequestParam String message,

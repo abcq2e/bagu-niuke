@@ -92,6 +92,7 @@ public class UserController {
     // ===== 🎯 Task 13: 加 @RateLimit 防暴力破解！=====
     // 60 秒内最多登录 5 次
     // 💡 想想 maxRequests 设多少合适？为什么不是 3 也不是 10？
+    // ⚠️ 提醒：切面未实现前该注解不生效，登录当前没有防爆破保护
     @OperationLog(value = "登录", type = "登录")
     @RateLimit(maxRequests = 5, timeWindow = 60, message = "登录过于频繁，请 60 秒后再试")
     @PostMapping("/login")
