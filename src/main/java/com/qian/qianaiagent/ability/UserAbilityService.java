@@ -973,6 +973,12 @@ public class UserAbilityService {
                 if (result != null && !result.isBlank()) {
                     UserAbilityProfile.ScoreResult sr = parseScoreResult(result, topic);
                     if (sr != null) {
+                        if (sr.isParseFailed()) {
+                            // 不可信评分照常落盘（避免用户答题数据丢失），但必须留下可检索的痕迹。
+                            // 兜底 score=3 会让本应「答得好」的回答按非优秀处理（此处要求 score>=4）
+                            log.warn("⚠️ [不可信评分] 解析失败已用兜底值，画像计入可能偏低: chatId={}, topic={}",
+                                    chatId, topic);
+                        }
                         UserAbilityProfile profile = getOrCreateProfile(chatId, userId);
 
                         // 🔴 [诊断] 记录评分入参
@@ -1071,10 +1077,11 @@ public class UserAbilityService {
                 return sr;
             }
         } catch (Exception e) {
-            log.warn("评分 JSON 解析失败，使用默认值: {}", e.getMessage());
+            log.warn("评分 JSON 解析失败，使用默认值并标记为不可信: {}", e.getMessage());
         }
         UserAbilityProfile.ScoreResult fallback = new UserAbilityProfile.ScoreResult();
         fallback.setTopic(defaultTopic);
+        fallback.setParseFailed(true);
         return fallback;
     }
 
@@ -1126,6 +1133,13 @@ public class UserAbilityService {
 
                 if (result != null && !result.isBlank()) {
                     UserAbilityProfile.ScoreResult sr = parseScoreResult(result, topic);
+                    // 🔴 告警必须放在 score>=4 判断之外：兜底值 score=3 永远进不了下面那个分支，
+                    //    放在里面会变成不可达的死代码（告警写了但永远不会触发）
+                    if (sr != null && sr.isParseFailed()) {
+                        // 兜底 score=3 < 4，因此解析失败时不会误移除错题，落在安全侧
+                        log.warn("⚠️ [不可信评分] 解析失败已用兜底值，本次不会移除错题: chatId={}, topic={}",
+                                chatId, topic);
+                    }
                     if (sr != null && sr.getScore() >= 4) {
                         UserAbilityProfile profile = getOrCreateProfile(chatId, userId);
                         UserAbilityProfile.TopicScore ts = profile.getTopicScores().get(topic);

@@ -501,6 +501,14 @@ public class UserAbilityProfile implements Serializable {
         private String originalTopic;
 
         /**
+         * LLM 评分输出不可信：JSON 无法解析，当前值来自兜底默认值。
+         * <p>
+         * ⚠️ 与 {@code RubricScorer.RubricResult.parseFailed}（另一条评分链路）同名但不同类，
+         * 两者语义一致：LLM 原始输出不可信，当前值为兜底或首次结果。
+         */
+        private boolean parseFailed = false;
+
+        /**
          * 解析管道符格式的 weakPoints，填充维度/置信度映射。
          * 格式：知识点|维度1,维度2|置信度
          * 向后兼容：无管道符的旧格式保持不变。
