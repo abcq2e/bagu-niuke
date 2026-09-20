@@ -213,7 +213,7 @@ nextStepPrompt: """
     """
 
 // 参数配置
-maxSteps: 20  // 比默认 10 步更宽容
+maxSteps: 8  // 比默认 10 步更收敛
 
 // 日志增强
 defaultAdvisors: MyLoggerAdvisor  // 记录每次 LLM 交互的详细日志

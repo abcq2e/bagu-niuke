@@ -356,7 +356,7 @@ public String doChatWithTools(String message, String chatId) {
 │        │                 ↓               │
 │        └──── 结果回填 ────┘               │
 │                                           │
-│   maxSteps=20, 直到 FINISHED 或超限       │
+│   maxSteps=8, 直到 FINISHED 或超限        │
 └──────────────────────────────────────────┘
 ```
 
@@ -404,7 +404,7 @@ public String act() {
 **关键设计：**
 - **禁用 Spring AI 内置工具循环：** `withInternalToolExecutionEnabled(false)` → 自己控制 think/act 节奏
 - **自主维护消息上下文：** `messageList` 贯穿多步循环，每步追加 tool call 和 tool result
-- **步数限制：** `maxSteps=20`，防止无限循环耗尽 token
+- **步数限制：** `maxSteps=8`（`BaseAgent` 默认 10，`YuManus` 覆写为 8），防止无限循环耗尽 token
 - **多模型支持：** YuManus 同时支持 DashScope（便宜）和 DeepSeek（效果好），通过 `ChatOptions` 切换
 
 ### 6.3 两条路径对比
