@@ -13,6 +13,7 @@ import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.chat.prompt.Prompt;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Signal;
 
 import java.time.Duration;
 import java.util.List;
@@ -124,7 +125,8 @@ public class ResilientChatModel implements ChatModel {
     }
 
     /**
-     * 流式降级：<b>首 token 超时</b> 或 <b>首 token 到达前的错误</b> 时切备模型。
+     * 流式降级：<b>首 token 超时</b>、<b>首 token 到达前的错误</b>、
+     * 或 <b>首 token 到达前的空完成</b> 时切备模型。
      *
      * <p>为什么必须 {@code Flux.defer}：Spring AI 的 {@code stream()} 返回冷流，
      * 建流那一刻不发起网络调用，故障只在订阅时暴露。不 defer 就没有「订阅时才知道
@@ -136,29 +138,46 @@ public class ResilientChatModel implements ChatModel {
      * {@code Mono.never()} —— 实测（Q3）该返回值表示「后续不再设超时」，
      * 于是超时只作用于第一个元素。{@code Mono.empty()} 不具同样效果：
      * 实测（Q2）它会让超时立即触发。
+     *
+     * <p>为什么判据是 {@code isOnNext()} 而不是 {@code !isOnError()}：{@code switchOnFirst}
+     * 对<b>空源</b>会以 {@code onComplete} 作为首个信号调用转换器（不是 onNext、也不是
+     * onError）。若按「不是 error 就透传」处理，上游静默断连造成的空完成会被当成一次
+     * 正常结束，用户看到的就是一片空白 —— 既不是错误、也没超时，无处兜底。
+     * 因此只有「首信号确实是数据」才透传，error 与 complete 一律降级。
      */
     @Override
     public Flux<ChatResponse> stream(Prompt prompt) {
         return Flux.defer(() -> primary.stream(prompt))
                 .timeout(Mono.delay(firstTokenTimeout), item -> Mono.never())
                 .switchOnFirst((signal, inner) -> {
-                    if (!signal.isOnError()) {
-                        // 首元素已到达（或空流正常结束）—— 原样透传，
-                        // 之后即使出错也不降级，避免用户看到两段拼接的内容。
+                    if (signal.isOnNext()) {
+                        // 首信号确实是数据 —— 原样透传，之后即使出错也不降级，
+                        // 避免用户看到两段拼接的内容。
                         return inner;
                     }
-                    return degradeStream(prompt, signal.getThrowable());
+                    // 首信号是 error，或是空完成（一个元素都没发）—— 都走降级。
+                    return degradeStream(prompt, causeOf(signal));
                 });
     }
 
     /**
      * 首个元素到达前主模型流失败 —— 切备模型；备模型也失败则返回兜底话术。
      *
-     * <p>备模型侧同样套一层 {@code switchOnFirst}：备模型<b>吐过首个元素之后</b>
-     * 再出错时不再追加兜底话术（否则用户会看到「半个回答 + 服务不可用」）。
+     * <p>备模型侧同样套一层 {@code switchOnFirst}，且判据同样收紧为 {@code isOnNext()}：
+     * 备模型吐过首个元素之后再出错时不再追加兜底话术（否则用户会看到
+     * 「半个回答 + 服务不可用」）；而备模型<b>吐首个元素之前</b>就空完成时，
+     * 透传空流等于让用户等完主模型 30s 又等备模型，最后仍是空白 —— 必须落到兜底话术。
+     *
+     * <p>备模型侧也套了与主模型同形的首 token 超时。缺了它，最坏路径是
+     * 「主模型超时 → 备模型不发首 token → 一直等到 {@code spring.mvc.async.request-timeout}
+     * （5 分钟）」，等待时间无上界；补上后最坏路径变成
+     * 「主模型超时 → 备模型超时 → 兜底话术」，<b>有界</b>优于无界。
+     * 注意这里仍是 {@code timeout(firstTimeout, item -> Mono.never())} 这个形态，
+     * 不是 {@code timeout(Duration)} —— 理由与主模型那层完全一致：中途超时切走会让
+     * 用户看到截断/拼接的内容，所以超时只允许作用于首个元素。
      */
-    private Flux<ChatResponse> degradeStream(Prompt prompt, Throwable primaryCause) {
-        log.warn("⚠️ 主模型流在首元素到达前失败，准备降级: err={}", primaryCause.toString());
+    private Flux<ChatResponse> degradeStream(Prompt prompt, String primaryCause) {
+        log.warn("⚠️ 主模型流在首元素到达前失败（error 或空完成），准备降级: cause={}", primaryCause);
 
         if (fallback == null) {
             return Flux.just(unavailableResponse());
@@ -166,14 +185,28 @@ public class ResilientChatModel implements ChatModel {
 
         // defer 让 fallback.stream() 只在订阅时调用 —— 主模型正常时备模型一次都不碰。
         return Flux.defer(() -> fallback.stream(prompt))
+                .timeout(Mono.delay(firstTokenTimeout), item -> Mono.never())
                 .switchOnFirst((signal, inner) -> {
-                    if (!signal.isOnError()) {
+                    if (signal.isOnNext()) {
                         return inner;
                     }
-                    log.error("❌ 备模型流也失败，返回兜底话术: err={}",
-                            signal.getThrowable().toString());
+                    log.error("❌ 备模型流也失败（error 或空完成），返回兜底话术: cause={}",
+                            causeOf(signal));
                     return Flux.just(unavailableResponse());
                 });
+    }
+
+    /**
+     * 把首个信号渲染成一句可读的失败原因，供降级日志区分故障形态。
+     *
+     * <p>空完成（首信号即 {@code onComplete}）没有 throwable，但它和 error 一样是
+     * 「上游在给出任何数据前就结束了」。日志里必须能把两者分开，否则静默断连会被
+     * 误读成「对端报了错」，排查方向就偏了。
+     */
+    private static String causeOf(Signal<? extends ChatResponse> signal) {
+        return signal.isOnError()
+                ? String.valueOf(signal.getThrowable())
+                : "首信号即 complete（上游在首元素到达前就结束了，未发出任何元素）";
     }
 
     /**
