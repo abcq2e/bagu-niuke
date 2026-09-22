@@ -1,6 +1,7 @@
 package com.qian.qianaiagent.agent.llm;
 
 import com.qian.qianaiagent.config.LlmResilienceProperties;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -173,5 +174,38 @@ class ResilienceChainTest {
 
         release.countDown();
         first.join(5_000);
+    }
+
+    // ===== 熔断的行为契约（不依赖 isCircuitOpen() 状态标志）=====
+
+    @Test
+    @DisplayName("熔断打开后快速失败：不再打到被装饰方法，抛 CallNotPermittedException")
+    void failsFastAfterCircuitOpens() throws Exception {
+        LlmResilienceProperties p = fastProps();
+        p.setMaxAttempts(1);
+        p.setMinimumNumberOfCalls(3);
+        p.setSlidingWindowSize(3);
+        ResilienceChain chain = new ResilienceChain("fastfail-test", p);
+
+        AtomicInteger calls = new AtomicInteger();
+        Callable<String> fail = () -> {
+            calls.incrementAndGet();
+            throw new java.net.SocketTimeoutException("read timed out");
+        };
+
+        // 打满窗口触发熔断
+        for (int i = 0; i < 3; i++) {
+            try {
+                chain.execute(fail);
+            } catch (Exception ignored) {
+                // 预期失败
+            }
+        }
+        assertThat(calls).as("熔断前 3 次调用都应真的打到被装饰方法").hasValue(3);
+
+        // 熔断已打开，再调用应被快速拒绝，且不再触达被装饰方法
+        assertThatThrownBy(() -> chain.execute(fail))
+                .isInstanceOf(CallNotPermittedException.class);
+        assertThat(calls).as("被拒绝的调用不应再打到被装饰方法").hasValue(3);
     }
 }
