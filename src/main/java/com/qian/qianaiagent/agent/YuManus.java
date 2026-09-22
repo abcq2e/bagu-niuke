@@ -1,11 +1,24 @@
 package com.qian.qianaiagent.agent;
 
+import com.qian.qianaiagent.advisor.InputGuardrailAdvisor;
 import com.qian.qianaiagent.advisor.MyLoggerAdvisor;
+import com.qian.qianaiagent.advisor.OutputGuardrailAdvisor;
+import com.qian.qianaiagent.advisor.guardrail.InputRuleSet;
+import com.qian.qianaiagent.advisor.guardrail.InstructionOverrideRule;
+import com.qian.qianaiagent.advisor.guardrail.LengthRule;
+import com.qian.qianaiagent.advisor.guardrail.OutputRuleSet;
+import com.qian.qianaiagent.advisor.guardrail.RoleHijackRule;
+import com.qian.qianaiagent.advisor.guardrail.ScoreManipulationRule;
+import com.qian.qianaiagent.advisor.guardrail.SystemPromptProbeRule;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 鱼皮的 AI 超级智能体（拥有自主规划能力，可以直接使用）
@@ -132,14 +145,77 @@ public class YuManus extends PlanAndExecuteAgent {
             如果上一轮工具调用失败，分析原因后换方案，不要重复相同的失败调用。
             """;
 
-    public YuManus(ToolCallback[] allTools, ChatModel openAiChatModel) {
-        super(allTools, ChatClient.builder(openAiChatModel)
-                .defaultAdvisors(new MyLoggerAdvisor())
-                .build());        // ✅ ChatClient 随 super() 传入，由 ToolCallAgent 构造函数调用 setChatClient()
+    /**
+     * 输入护栏命中话术 —— 只把用户拉回任务本身，不解释命中了哪条规则。
+     * ⚠️ 不给攻击者调试反馈：写明规则名等于让他逐条试出边界。
+     */
+    private static final String GUARDRAIL_BLOCKED_REPLY =
+            "这个请求我没法照做，换个说法我们再继续吧。";
+
+    /** 输出护栏兜底话术 —— 自然过渡，用户不应察觉被拦。 */
+    private static final String GUARDRAIL_FALLBACK_REPLY =
+            "这部分内容我不便展开，我们换个方向继续。";
+
+    /**
+     * 系统提示词中的独有片段，用于检测输出泄漏。
+     * ⚠️ 改动 {@link #SYSTEM_PROMPT} 时，这里必须同步更新，否则泄漏检测形同虚设 ——
+     * 片段对不上时不会报错，只是永远匹配不到，属于静默失效。
+     * 下方两条已对照 {@link #SYSTEM_PROMPT} 逐字核实。
+     *
+     * <p>选取标准：足够长、且只可能出现在系统提示词里。刻意不用「你是」这类
+     * 通用措辞 —— 正常回答里也会出现，会把正常输出误判为泄漏。
+     */
+    private static final List<String> OUTPUT_PROMPT_FRAGMENTS = List.of(
+            "你拥有网络搜索、文件操作、终端执行、知识库检索等能力",
+            "不知道就说不知道，不编造事实");
+
+    public YuManus(ToolCallback[] allTools, ChatModel openAiChatModel,
+                   InstructionOverrideRule instructionOverrideRule,
+                   RoleHijackRule roleHijackRule,
+                   SystemPromptProbeRule systemPromptProbeRule,
+                   ScoreManipulationRule scoreManipulationRule,
+                   LengthRule lengthRule) {
+        super(allTools, buildChatClient(openAiChatModel, instructionOverrideRule, roleHijackRule,
+                systemPromptProbeRule, scoreManipulationRule, lengthRule));
+        // ✅ ChatClient 随 super() 传入，由 ToolCallAgent 构造函数调用 setChatClient()
         this.setName("yuManus");
         this.setSystemPrompt(SYSTEM_PROMPT);
         this.setNextStepPrompt(NEXT_STEP_PROMPT);
         this.setMaxSteps(8);           // 每个子目标的 ReAct 循环预算；计划长度上限见 PlanAndExecuteAgent.MAX_PLAN_STEPS
+    }
+
+    /**
+     * 装配 ChatClient：日志 Advisor + 两侧护栏。
+     *
+     * <p>{@code super(...)} 必须是构造器首条语句，无法先构造局部变量再传入，
+     * 因此把装配逻辑抽到这个 static 方法里 —— 顺带避免了在 {@code this} 未就绪时
+     * 调用实例方法。
+     *
+     * <p>护栏加在末尾即可：链按 order 升序执行，实际位置由 {@code getOrder()} 决定，
+     * 与添加顺序无关。输入护栏 = {@link Integer#MIN_VALUE}（最外层），
+     * 输出护栏 = {@link Integer#MAX_VALUE}（最内层）。
+     */
+    private static ChatClient buildChatClient(ChatModel openAiChatModel,
+                                              InstructionOverrideRule instructionOverrideRule,
+                                              RoleHijackRule roleHijackRule,
+                                              SystemPromptProbeRule systemPromptProbeRule,
+                                              ScoreManipulationRule scoreManipulationRule,
+                                              LengthRule lengthRule) {
+        // 🔴 规则集按「更严格者优先」的顺序显式构造，不用 Spring 注入 List<InputRule>：
+        // bean 扫描顺序不确定，会让这条契约随机失效（InputRuleSet 命中第一条即短路）。
+        InputRuleSet inputRuleSet = new InputRuleSet(List.of(
+                instructionOverrideRule, roleHijackRule,
+                systemPromptProbeRule, scoreManipulationRule, lengthRule));
+        OutputRuleSet outputRuleSet = new OutputRuleSet(OUTPUT_PROMPT_FRAGMENTS);
+
+        List<Advisor> advisors = new ArrayList<>();
+        advisors.add(new MyLoggerAdvisor());
+        advisors.add(new InputGuardrailAdvisor(inputRuleSet, GUARDRAIL_BLOCKED_REPLY));
+        advisors.add(new OutputGuardrailAdvisor(outputRuleSet, GUARDRAIL_FALLBACK_REPLY));
+
+        return ChatClient.builder(openAiChatModel)
+                .defaultAdvisors(advisors.toArray(new Advisor[0]))
+                .build();
     }
 
     @Override

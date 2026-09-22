@@ -1,6 +1,15 @@
 package com.qian.qianaiagent.interview;
 
+import com.qian.qianaiagent.advisor.InputGuardrailAdvisor;
 import com.qian.qianaiagent.advisor.MyLoggerAdvisor;
+import com.qian.qianaiagent.advisor.OutputGuardrailAdvisor;
+import com.qian.qianaiagent.advisor.guardrail.InputRuleSet;
+import com.qian.qianaiagent.advisor.guardrail.InstructionOverrideRule;
+import com.qian.qianaiagent.advisor.guardrail.LengthRule;
+import com.qian.qianaiagent.advisor.guardrail.OutputRuleSet;
+import com.qian.qianaiagent.advisor.guardrail.RoleHijackRule;
+import com.qian.qianaiagent.advisor.guardrail.ScoreManipulationRule;
+import com.qian.qianaiagent.advisor.guardrail.SystemPromptProbeRule;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -42,6 +51,34 @@ public class QuizApp {
     private final ChatClient quizChatClient;
 
     /**
+     * 输入护栏命中话术 —— 只把用户拉回面试，不解释命中了哪条规则。
+     *
+     * <p>⚠️ 不要写明「检测到注入攻击」之类的细节：那等于给攻击者调试反馈，
+     * 让他能逐条试出规则的边界。含糊但礼貌是刻意的。
+     */
+    private static final String GUARDRAIL_BLOCKED_REPLY =
+            "我们继续面试吧～请围绕当前这道题说说你的思路。";
+
+    /**
+     * 输出护栏兜底话术 —— 自然的过渡语，用户不应察觉被拦截。
+     *
+     * <p>同样不解释原因：兜底只有在模型开始复述系统提示词时才出现，
+     * 提示用户「刚才那句被拦了」反而会引导他继续尝试提取。
+     */
+    private static final String GUARDRAIL_FALLBACK_REPLY =
+            "这个问题先聊到这里，我们看下一题吧。";
+
+    /**
+     * 系统提示词中的独有片段，用于检测输出泄漏。
+     * ⚠️ 改动 system prompt 时，这里必须同步更新，否则泄漏检测形同虚设 ——
+     * 片段对不上时不会报错，只是永远匹配不到，属于静默失效。
+     * 下方两条已对照 QuizApp.java:51 与 :59 逐字核实。
+     */
+    private static final List<String> OUTPUT_PROMPT_FRAGMENTS = List.of(
+            "你是大厂技术面试官",
+            "严禁点评历史对话中的其他题目");
+
+    /**
      * 面试官提示词 —— AI 只负责点评+讲解，绝对禁止出题。
      *
      * <p>🔴 架构级铁律：出题权完全在后端，AI 永远不参与出题。
@@ -78,11 +115,27 @@ public class QuizApp {
 
     private final ChatMemory chatMemory; // 🔴 保存引用，用于持久化题目到聊天记录
 
-    public QuizApp(ChatModel openAiChatModel, ChatMemory chatMemory) {
+    public QuizApp(ChatModel openAiChatModel, ChatMemory chatMemory,
+                   InstructionOverrideRule instructionOverrideRule,
+                   RoleHijackRule roleHijackRule,
+                   SystemPromptProbeRule systemPromptProbeRule,
+                   ScoreManipulationRule scoreManipulationRule,
+                   LengthRule lengthRule) {
         this.chatMemory = chatMemory;
+        // 🔴 规则集按「更严格者优先」的顺序显式构造，不用 Spring 注入 List<InputRule>：
+        // bean 扫描顺序不确定，会让这条契约随机失效（InputRuleSet 命中第一条即短路）。
+        InputRuleSet inputRuleSet = new InputRuleSet(List.of(
+                instructionOverrideRule, roleHijackRule,
+                systemPromptProbeRule, scoreManipulationRule, lengthRule));
+        OutputRuleSet outputRuleSet = new OutputRuleSet(OUTPUT_PROMPT_FRAGMENTS);
+
         List<Advisor> quizAdvisors = new ArrayList<>();
         quizAdvisors.add(MessageChatMemoryAdvisor.builder(chatMemory).build());
         quizAdvisors.add(new MyLoggerAdvisor());
+        // 护栏加在末尾即可：链按 order 升序执行，实际位置由 getOrder() 决定，与添加顺序无关。
+        // 输入护栏 = Integer.MIN_VALUE（最外层，先于记忆），输出护栏 = Integer.MAX_VALUE（最内层）。
+        quizAdvisors.add(new InputGuardrailAdvisor(inputRuleSet, GUARDRAIL_BLOCKED_REPLY));
+        quizAdvisors.add(new OutputGuardrailAdvisor(outputRuleSet, GUARDRAIL_FALLBACK_REPLY));
         quizChatClient = ChatClient.builder(openAiChatModel)
                 .defaultAdvisors(quizAdvisors.toArray(new Advisor[0]))
                 .build();
