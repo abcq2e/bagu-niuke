@@ -391,12 +391,19 @@ class WebScrapingToolTest {
         String result = new WebScrapingTool()
                 .scrapeWebPage("http://169.254.169.254/latest/meta-data/");
         assertTrue(result.startsWith("Error scraping web page:"), result);
+        // 🔴 必须断言是「网段规则」拒绝的：本机无到 link-local 的路由，
+        //    未加固的实现同样会因 SocketException 落到 catch-all 并返回相同前缀 ——
+        //    只断言前缀则本用例在未加固代码上就是绿的，测不到任何防护
+        assertTrue(result.contains("内网"), result);
     }
 
     @Test
     void rejectsFileScheme() {
         String result = new WebScrapingTool().scrapeWebPage("file:///etc/passwd");
         assertTrue(result.startsWith("Error scraping web page:"), result);
+        // 🔴 同理：Jsoup 自身就会拒绝 file: 并抛 MalformedURLException，
+        //    未加固的实现也返回相同前缀。断言「协议」才能钉死是白名单拒绝的
+        assertTrue(result.contains("协议"), result);
     }
 
     // ===== 改造：原测试只断言 assertNotNull，"Error..." 也算通过（假绿）=====
@@ -406,8 +413,10 @@ class WebScrapingToolTest {
         Assumptions.assumeTrue(dnsResolvable("www.codefather.cn"), "需要外网，已跳过");
         String result = new WebScrapingTool().scrapeWebPage("https://www.codefather.cn");
         assertNotNull(result);
-        // 断言正常站点未被内网规则误伤 —— 这是加固后最可能的回归
-        assertFalse(result.contains("内网"), result);
+        // 断言正常站点未被误伤。
+        // ⚠️ 不要用 contains("内网") 判断：被抓页面的正文本身就可能含该词
+        //    （实测 codefather.cn 课程简介里有「实战内网穿透」），且随缓存时有时无，
+        //    会产生既非稳定红也非稳定绿的 flaky 断言
         assertFalse(result.startsWith("Error scraping web page:"), result);
     }
 
@@ -545,6 +554,9 @@ public class ResourceDownloadToolTest {
         String result = new ResourceDownloadTool()
                 .downloadResource(PUBLIC_URL, "../../evil.png");
         assertTrue(result.startsWith("Error downloading resource:"), result);
+        // 🔴 必须断言是「路径校验」拒绝的：未加固的实现会真的去下载，
+        //    下载失败时同样返回 Error 前缀 —— 只断言前缀会在无网环境下假绿
+        assertTrue(result.contains("路径"), result);
     }
 
     @Test
@@ -552,6 +564,7 @@ public class ResourceDownloadToolTest {
         String result = new ResourceDownloadTool()
                 .downloadResource(PUBLIC_URL, "C:/Windows/evil.png");
         assertTrue(result.startsWith("Error downloading resource:"), result);
+        assertTrue(result.contains("路径"), result);
     }
 
     @Test
@@ -559,6 +572,7 @@ public class ResourceDownloadToolTest {
         String result = new ResourceDownloadTool()
                 .downloadResource(PUBLIC_URL, "sub/../../evil.png");
         assertTrue(result.startsWith("Error downloading resource:"), result);
+        assertTrue(result.contains("路径"), result);
     }
 
     // ===== 新增：SSRF（纯本地）=====

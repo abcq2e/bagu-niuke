@@ -24,8 +24,12 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 # 从构建阶段复制 JAR
 COPY --from=build /app/target/*.jar app.jar
 
-# 🔴 预创建持久化目录并授权给 appuser，否则非 root 用户无法写入，面试/复习进度无法保存
-RUN mkdir -p /app/.quiz-cursor /app/.ability-profiles /app/.review-cursor /app/data/chat-memory \
+# 🔴 预创建持久化目录并授权给 appuser，否则非 root 用户无法写入，面试/复习进度无法保存。
+# /app/data/evals 必须在这里（chown 之前）创建：named volume 首次挂载时会复制镜像里该目录的属主，
+# 镜像里若有目录却被 Docker 以 root:root 创建挂载点，appuser 就写不进去，
+# 而 EvaluationRecorder 的 @PostConstruct 只会打一行日志然后静默降级，极难排查。
+RUN mkdir -p /app/.quiz-cursor /app/.ability-profiles /app/.review-cursor \
+        /app/data/chat-memory /app/data/evals \
     && chown -R appuser:appgroup /app
 
 # 切换到非 root 用户

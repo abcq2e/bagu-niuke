@@ -4,8 +4,6 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.alibaba.cloud.ai.dashscope.chat.DashScopeChatOptions;
 import com.qian.qianaiagent.agent.model.AgentState;
-import com.qian.qianaiagent.agent.plan.TaskPlan;
-import com.qian.qianaiagent.agent.plan.TaskStep;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.extern.slf4j.Slf4j;
@@ -21,14 +19,17 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * 处理工具调用的基础代理类，具体实现了 think 和 act 方法，可以用作创建实例的父类
+ * 处理工具调用的基础代理类，具体实现了 think 和 act 方法，可以用作创建实例的父类。
+ * <p>
+ * 职责边界：<b>纯 ReAct 循环 + 工具执行</b>（think/act、工具连续失败自愈、
+ * 流式展示截断、细粒度轨迹记录）。需要先规划再执行的场景请继承
+ * {@link PlanAndExecuteAgent}，它在本类之上叠加 Plan-and-Execute 机制。
  */
 @EqualsAndHashCode(callSuper = true)
 @Data
@@ -49,8 +50,6 @@ public class ToolCallAgent extends ReActAgent {
     // 连续失败阈值：超过此次数后 Agent 应换方案
     private static final int MAX_CONSECUTIVE_FAILURES = 3;
 
-    // Plan-and-Execute 模式下的任务计划（第 9 篇教程）
-    private TaskPlan taskPlan;
     // 禁用 Spring AI 内置的工具调用机制，自己维护选项和消息上下文
     private final ChatOptions chatOptions;
 
@@ -158,28 +157,15 @@ public class ToolCallAgent extends ReActAgent {
     }
 
     /**
-     * 重写 step()，让 AI 的文本回复在流式输出中可见。
+     * 重写父类的展示钩子，让 AI 的文本回复在流式输出中可见。
      * <p>
-     * 父类只在 think()→false 时返回固定字符串"思考完成 - 无需行动"，
-     * 但 AI 的真正回复文本（lastThinkText）被丢弃了。
+     * 父类 {@code ReActAgent.noActionText()} 只返回固定的"思考完成 - 无需行动"，
+     * 但 AI 的真正回复文本（lastThinkText，即最终答案）就被丢弃了。
      * 这里把它拼进返回值，用户能看到 AI 说了什么。
      */
     @Override
-    public String step() {
-        try {
-            boolean shouldAct = think();
-            if (!shouldAct) {
-                // 无需工具 → 直接展示 AI 的文本回复（如最终答案）
-                if (!lastThinkText.isBlank()) {
-                    return "💬 " + lastThinkText;
-                }
-                return "思考完成，无需行动";
-            }
-            return act();
-        } catch (Exception e) {
-            log.error("ReAct 步骤执行失败", e);
-            return "步骤执行失败：" + e.getMessage();
-        }
+    protected String noActionText() {
+        return lastThinkText.isBlank() ? "思考完成，无需行动" : "💬 " + lastThinkText;
     }
 
     /** 自愈检查：工具连续失败超阈值时，向消息列表注入警告提示 */
@@ -306,138 +292,4 @@ public class ToolCallAgent extends ReActAgent {
         log.info(logBuilder.toString());
         return displayResult;
     }
-
-
-    private static final String PLAN_SYSTEM_PROMPT = """
-    ## 角色设定
-    你是专业AI任务规划专家，擅长拆解复杂需求，输出有序、可执行的分步任务清单。
-    你知晓Agent拥有3类工具：WebSearchTool联网检索、TerminalOperationTool终端命令、RagSearchTool本地知识库检索，规划每一步时必须匹配对应工具。
-
-    ## 硬性输出规则
-    1. 只返回纯JSON，禁止任何解释、前言、markdown、多余文字；
-    2. JSON固定包含两层字段：
-    - goal：字符串，完整复述用户原始总目标
-    - steps：数组，每一项是单步任务对象，单步必须包含：
-         stepDesc：本步骤要做什么
-        toolName：执行该步骤需要调用的工具名称，三选一：WebSearchTool / TerminalOperationTool / RagSearchTool
-        retryLimit：本步骤最大重试次数（固定2）
-        failStrategy：步骤失败后的处理方案（重试/切换工具/终止任务）
-
-    ## Few-Shot 标准示例（严格模仿此结构输出）
-    {
-        "goal": "分析SpringBoot项目启动慢问题并给出优化方案",
-        "steps": [
-            {
-                "stepDesc": "检索SpringBoot启动慢通用优化方案",
-                "toolName": "WebSearchTool",
-                "retryLimit": 2,
-                "failStrategy": "切换RagSearchTool查询本地知识库"
-            },
-            {
-                "stepDesc": "执行mvn compile编译项目查看启动日志",
-                "toolName": "TerminalOperationTool",
-                "retryLimit": 2,
-                "failStrategy": "重试2次后终止任务，告知用户权限不足"
-            }
-        ]
-    }
-
-    ## 规划约束
-    1. 步骤顺序必须符合执行逻辑，先检索信息再操作本地文件；
-    2. 每一步仅分配一个工具，禁止一步调用多个工具；
-    3. 复杂需求必须拆分成多步，禁止合并多个操作到单一步骤；
-    4. 若需求无需要工具的操作，直接给出仅终止的单步计划。
-
-    ## 用户任务目标：%s
-    """;
-
-
-    // @formatter:off
-    public TaskPlan generatePlan(String userGoal) {
-        // ============================================
-        // 🔴 你的代码写在这里
-        // ============================================
-        // 第 1 步：写规划 Prompt
-        // 第 2 步：调 LLM 获取 TaskPlan（提示：看 QuizApp 第158行）
-        try {
-            TaskPlan taskPlan = getChatClient()        // ✅ 用 getter，不用子类字段
-                    .prompt()
-                    .system(PLAN_SYSTEM_PROMPT.formatted(userGoal))  // ✅ 格式化 %s 注入目标
-                    .user(userGoal)
-                    .call()
-                    .entity(TaskPlan.class);
-            return taskPlan;
-        } catch (Exception e) {
-            log.warn("Plan generate failed", e);
-
-            return null;
-        }
-        // 第 3 步：try-catch 包裹，失败时 log.warn + return null
-        // ============================================
-     //   return null; // 先返回 null，等你实现后删除这行
-
-    }
-
-
-    // ✅ ========== 混用模式：判断 + 切换 ==========
-    @Override
-    public String run(String userPrompt) {
-        // ===== 第 1 层：预判断 =====
-        if (needsPlanning(userPrompt)) {
-            log.info("{} 任务复杂，尝试 Plan-and-Execute 模式", getName());
-
-            // ===== 第 2 层：调 LLM 生成计划 =====
-            TaskPlan plan = generatePlan(userPrompt);
-            this.taskPlan = plan;
-
-            // ===== 第 3 层：遍历执行 =====
-            if (plan != null && plan.getSteps() != null && !plan.getSteps().isEmpty()) {
-                log.info("{} 计划生成成功，共 {} 步", getName(), plan.getSteps().size());
-                List<String> stepResults = new ArrayList<>();
-                for (int i = 0; i < plan.getSteps().size(); i++) {
-                    TaskStep step = plan.getSteps().get(i);
-                    step.setStatus(TaskStep.StepStatus.IN_PROGRESS);
-                    log.info("Plan 模式执行第 {}/{} 步：{}", i + 1, plan.getSteps().size(), step.getDescription());
-                    String stepResult = super.run(step.getDescription());
-                    stepResults.add("Step " + (i + 1) + "：" + stepResult);
-                    step.setStatus(TaskStep.StepStatus.COMPLETED);
-                    setState(AgentState.IDLE);
-                }
-                return "Plan-and-Execute 完成（共 " + plan.getSteps().size() + " 步）：\n" + String.join("\n", stepResults);
-            }
-            // 计划失败 → 兜底 ReAct
-            log.info("{} 计划生成失败，降级为 ReAct 模式", getName());
-        } else {
-            log.info("{} 任务简单，直接走 ReAct 模式", getName());
-        }
-
-        // ===== 兜底：ReAct 模式 =====
-        return super.run(userPrompt);
-    }
-
-    // ============================================================
-    // 🔴 你的任务：实现预判断方法 needsPlanning()
-    // ============================================================
-    // 3 关，从简单到进阶：
-    //   第 1 关：太短的输入不规划 → userPrompt.length() < 阈值 → return false
-    //   第 2 关：包含复杂任务特征词 → "分析""对比""优化""总结""报告""检查""重构" → return true
-    //   第 3 关（可选）：提到文件路径 → ".java" ".xml" "src/" → return true
-    //
-    // 🔴 你的代码写在这里 ↓
-    private boolean needsPlanning(String userPrompt) {
-        // 太短的输入不规划
-        if(userPrompt.length() < 60){
-            return false;
-        }
-        // 必须包含复杂任务特征词才走 Plan（避免大部分日常问答触发多余的 LLM 调用）
-        String[] keywords = {"分析以下", "对比", "优化", "总结一下", "深入分析", "检查代码", "重构"};
-        for (String kw : keywords) {
-            if(userPrompt.contains(kw)){
-                return true;
-            }
-        }
-
-        return false;
-    }
-
 }

@@ -127,6 +127,9 @@ services:
       - ability_profiles:/app/.ability-profiles
       - review_cursor:/app/.review-cursor
       - chat_memory:/app/data/chat-memory
+      # 🔴 此前漏了 evals：评估记录同样写在 /app/data/evals（EvaluationRecorder），
+      # 不挂 volume 则容器每次重建都会丢失全部 Agent/RAG 评分数据
+      - eval_data:/app/data/evals
     depends_on:
       qian-mysql:
         condition: service_healthy
@@ -164,6 +167,7 @@ volumes:
   ability_profiles:
   review_cursor:
   chat_memory:
+  eval_data:
 
 networks:
   qian-net:

@@ -405,7 +405,12 @@ const STORAGE_KEY = 'yu_ai_agent_current_chat_id'
 const savedChatId = localStorage.getItem(STORAGE_KEY)
 // 🔴 crypto.randomUUID() 仅 HTTPS/localhost 可用，HTTP 需 polyfill
 const fallbackUUID = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16) })
-const chatId = ref(savedChatId || ('chat_' + (typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : fallbackUUID())))
+const randomUUID = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : fallbackUUID()
+// 🔴 会话 ID 必须不可预测：它既是存储主键也是访问凭据。
+// 此前「新对话」与错题复习用的是 'chat_' + Date.now()（毫秒时间戳，可枚举），
+// 猜中范围内的 ID 即可读写他人会话。统一改用 UUID。
+const newChatId = (prefix) => prefix + randomUUID()
+const chatId = ref(savedChatId || newChatId('chat_'))
 const persistChatId = () => localStorage.setItem(STORAGE_KEY, chatId.value)
 watch(chatId, persistChatId)
 
@@ -517,7 +522,7 @@ const reviewProgressPct = computed(() => {
 const switchToReviewConv = () => {
   if (reviewConvActive.value) return
   saveCurrentToCache()
-  const rid = 'review_' + Date.now()
+  const rid = newChatId('review_')   // 🔴 同上：不可用可枚举的时间戳
   reviewSourceChatId.value = chatId.value // 记住原始 chatId
   chatId.value = rid
   messages.value = []
@@ -752,7 +757,7 @@ const newChat = () => {
   connecting.value = false
   if (reviewConvActive.value) {
     // 离开复习会话，回到原来的面试会话
-    chatId.value = reviewSourceChatId.value || ('chat_' + Date.now())
+    chatId.value = reviewSourceChatId.value || newChatId('chat_')
     reviewSourceChatId.value = ''
   }
   saveCurrentToCache()
@@ -765,7 +770,7 @@ const newChat = () => {
       messageCount: messages.value.length
     })
   }
-  const newId = 'chat_' + Date.now()
+  const newId = newChatId('chat_')   // 🔴 不可用 Date.now()：可枚举的 ID 等于可被猜测的凭据
   // 🔴 新对话清空画像缓存，避免闪现旧数据
   profileTopics.value = []
   try { localStorage.removeItem(PROFILE_CACHE_KEY) } catch (e) { /* ignore */ }

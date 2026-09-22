@@ -149,7 +149,7 @@ public class StepByStepReActTest {
     // 1. SystemPrompt 应该加在哪里？.prompt().system(...) 还是加到消息列表里？
     //    （提示：两者的语义不同，.system() 是给模型的指令，消息列表是对话历史）
     // 2. NextStepPrompt 应该每轮都加还是只加一次？
-    //    （提示：想想 ToolCallAgent.think() 第62行，每轮都加了）
+    //    （提示：看 ToolCallAgent.think() 开头如何每轮追加 NextStepPrompt）
     // 3. 抽取方法时，方法签名怎么设计？reactLoop(String userPrompt) 还是更复杂？
     // 4. 这个方法和 ToolCallAgent 的 think()/act() 有什么区别？
     //    （完成这关后去读 ToolCallAgent.java，你会恍然大悟）

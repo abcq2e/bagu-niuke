@@ -623,7 +623,6 @@ public class UserAbilityService {
         }
         long elapsed = System.currentTimeMillis() - circuitBreakerLastFailTime;
         if (elapsed >= CIRCUIT_BREAKER_COOLDOWN_MS) {
-            // 冷却时间已过 → 半开状态，允许尝试一次
             log.info("🔧 熔断器半开：冷却时间已过，尝试恢复 AI 调用");
             circuitBreakerFailCount = 0; // 重置，允许下一次尝试
             return false;
