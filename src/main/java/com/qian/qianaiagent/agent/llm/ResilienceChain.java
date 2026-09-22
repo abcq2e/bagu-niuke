@@ -3,6 +3,7 @@ package com.qian.qianaiagent.agent.llm;
 import com.qian.qianaiagent.config.LlmResilienceProperties;
 import io.github.resilience4j.bulkhead.Bulkhead;
 import io.github.resilience4j.bulkhead.BulkheadConfig;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.core.IntervalFunction;
@@ -73,6 +74,10 @@ public class ResilienceChain {
                 .slidingWindowSize(props.getSlidingWindowSize())
                 .minimumNumberOfCalls(props.getMinimumNumberOfCalls())
                 .waitDurationInOpenState(props.getWaitDurationInOpenState())
+                // 舱壁限流是主动的保护动作，不是后端故障；计入会与熔断器互相拆台：
+                // 限流 → 熔断计数上涨 → 熔断打开 → 连本该成功的调用也被拒。
+                // 实测：不忽略时 2 次限流即可打满窗口把 CB 打开，忽略后 CB 计数纹丝不动。
+                .ignoreExceptions(BulkheadFullException.class)
                 .build());
 
         this.bulkhead = Bulkhead.of(name + "-bulkhead", BulkheadConfig.custom()

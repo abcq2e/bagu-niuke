@@ -176,6 +176,51 @@ class ResilienceChainTest {
         first.join(5_000);
     }
 
+    @Test
+    @DisplayName("舱壁限流不计入熔断：限流是主动保护动作，不应把熔断器打开")
+    void bulkheadOverflowDoesNotOpenCircuitBreaker() throws Exception {
+        LlmResilienceProperties p = fastProps();
+        p.setMaxAttempts(1);
+        p.setMaxConcurrentCalls(1);
+        p.setTimeout(Duration.ofSeconds(10));
+        p.setMinimumNumberOfCalls(2);     // 窗口极小：若不忽略限流，2 次拒绝即可熔断
+        p.setSlidingWindowSize(2);
+        ResilienceChain chain = new ResilienceChain("bulkhead-cb-test", p);
+
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        Thread first = new Thread(() -> {
+            try {
+                chain.execute(() -> {
+                    entered.countDown();
+                    release.await();
+                    return "done";
+                });
+            } catch (Exception ignored) {
+                // 主线程放行后正常返回
+            }
+        });
+        first.start();
+
+        assertThat(entered.await(5, TimeUnit.SECONDS))
+                .as("第一个调用应已进入被装饰方法，占满并发额度").isTrue();
+
+        // 并发额度已被占满，随后的调用只会被 Bulkhead 拒绝（各抛 BulkheadFullException）
+        for (int i = 0; i < 3; i++) {
+            assertThatThrownBy(() -> chain.execute(() -> "rejected"))
+                    .as("超过 maxConcurrentCalls 的调用必须被 Bulkhead 拒绝")
+                    .isInstanceOf(io.github.resilience4j.bulkhead.BulkheadFullException.class);
+        }
+
+        assertThat(chain.isCircuitOpen())
+                .as("舱壁限流是主动保护动作，不是后端故障；连续限流不应打开熔断器")
+                .isFalse();
+
+        release.countDown();
+        first.join(5_000);
+    }
+
     // ===== 熔断的行为契约（不依赖 isCircuitOpen() 状态标志）=====
 
     @Test
