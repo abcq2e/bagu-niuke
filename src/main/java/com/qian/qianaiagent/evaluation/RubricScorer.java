@@ -4,7 +4,6 @@ package com.qian.qianaiagent.evaluation;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qian.qianaiagent.agent.trace.AgentTrace;
 import com.qian.qianaiagent.agent.trace.TraceStep;
-import jakarta.annotation.Resource;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -54,8 +53,19 @@ import java.util.Optional;
 @Component
 public class RubricScorer {
 
-    @Resource
-    private ChatModel openAiChatModel;
+    /**
+     * 构造器注入而非 {@code @Resource} 字段注入。
+     *
+     * <p>为什么必须这样：{@code @Resource} 会<b>先按字段名匹配</b>，原先字段名
+     * {@code openAiChatModel} 会直接命中同名裸 bean，{@code @Primary} 上的
+     * {@code ResilientChatModel} 根本没机会生效 —— 这条评分路径会完全失去
+     * 超时/重试/熔断/降级保护。构造器注入按<b>类型</b>解析，{@code @Primary} 才会赢。
+     */
+    private final ChatModel chatModel;
+
+    public RubricScorer(ChatModel chatModel) {
+        this.chatModel = chatModel;
+    }
 
     // ============================================================
     // 💡 4 个维度，每个 0-25 分，总分 100。
@@ -153,7 +163,7 @@ public class RubricScorer {
 
     public RubricResult callLLMAndParse(String prompt) {
         // 1. 调用 LLM
-        String resp = ChatClient.builder(openAiChatModel).build()
+        String resp = ChatClient.builder(chatModel).build()
                 .prompt().user(prompt).call().content();
 
         if (resp == null || resp.isBlank()) {
@@ -226,7 +236,7 @@ public class RubricScorer {
                 文本：%s
                 声明列表：""".formatted(text);
 
-        String response = ChatClient.builder(openAiChatModel).build()
+        String response = ChatClient.builder(chatModel).build()
                 .prompt().user(prompt).call().content();
         if (response == null || response.isBlank()) {
             return List.of();
@@ -250,7 +260,7 @@ public class RubricScorer {
                 声明：%s
                 上下文：%s""".formatted(claim, context);
 
-        String response = ChatClient.builder(openAiChatModel).build()
+        String response = ChatClient.builder(chatModel).build()
                 .prompt().user(prompt).call().content();
 
         return response != null && response.trim().toUpperCase().contains("YES");

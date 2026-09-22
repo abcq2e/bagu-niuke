@@ -34,8 +34,22 @@ import java.util.stream.Collectors;
 @Slf4j
 public class RagasEvaluator {
 
-    @Resource
-    private ChatModel openAiChatModel;
+    /**
+     * 构造器注入而非 {@code @Resource} 字段注入。
+     *
+     * <p>原先字段名 {@code openAiChatModel}，{@code @Resource} 会<b>先按字段名匹配</b>，
+     * 直接命中同名裸 bean，{@code @Primary} 上的 {@code ResilientChatModel} 完全没生效 ——
+     * RAGAS 评估的每次 LLM 调用都绕过了超时/重试/熔断/降级。构造器注入按<b>类型</b>解析，
+     * {@code @Primary} 才会赢。
+     *
+     * <p>同类的 {@code primaryEmbeddingModel} 仍是 {@code @Resource}：{@code EmbeddingModel}
+     * 没有加 {@code @Primary} 的装饰器，字段注入不会造成「绕开保护」的缺口，无需一并改。
+     */
+    private final ChatModel chatModel;
+
+    public RagasEvaluator(ChatModel chatModel) {
+        this.chatModel = chatModel;
+    }
 
     @Resource
     private EmbeddingModel primaryEmbeddingModel;
@@ -208,7 +222,7 @@ public class RagasEvaluator {
 
                 生成的问题：""".formatted(generatedAnswer);
 
-        String response = ChatClient.builder(openAiChatModel).build()
+        String response = ChatClient.builder(chatModel).build()
                 .prompt()
                 .user(reverseGenPrompt)
                 .call()
@@ -308,7 +322,7 @@ public class RagasEvaluator {
                 文档内容：%s
                 """.formatted(query, content);
 
-        String response = ChatClient.builder(openAiChatModel).build()
+        String response = ChatClient.builder(chatModel).build()
                 .prompt()
                 .user(prompt)
                 .call()
@@ -344,7 +358,7 @@ public class RagasEvaluator {
                 声明列表：
                 """.formatted(text);
 
-        String response = ChatClient.builder(openAiChatModel).build()
+        String response = ChatClient.builder(chatModel).build()
                 .prompt()
                 .user(prompt)
                 .call()
@@ -387,7 +401,7 @@ public class RagasEvaluator {
                 上下文：%s
                 """.formatted(claim, context);
 
-        String response = ChatClient.builder(openAiChatModel).build()
+        String response = ChatClient.builder(chatModel).build()
                 .prompt()
                 .user(prompt)
                 .call()

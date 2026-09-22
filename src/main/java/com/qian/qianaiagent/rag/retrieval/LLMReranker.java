@@ -1,6 +1,5 @@
 package com.qian.qianaiagent.rag.retrieval;
 
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
@@ -39,8 +38,19 @@ import java.util.regex.Pattern;
 @Slf4j
 public class LLMReranker {
 
-    @Resource
-    private ChatModel openAiChatModel;
+    /**
+     * 构造器注入而非 {@code @Resource} 字段注入。
+     *
+     * <p>原先字段名 {@code openAiChatModel}，{@code @Resource} <b>先按字段名匹配</b>，
+     * 会直接命中同名裸 bean，{@code @Primary} 上的 {@code ResilientChatModel} 不生效 ——
+     * 重排打分（每 5 条文档一批、批量并发调用）会绕过超时/重试/熔断/降级。
+     * 构造器注入按<b>类型</b>解析，{@code @Primary} 才会赢。
+     */
+    private final ChatModel chatModel;
+
+    public LLMReranker(ChatModel chatModel) {
+        this.chatModel = chatModel;
+    }
 
     /** 每批交给 LLM 打分的文档数（文档建议经验值：5 条是速度与精度的平衡点） */
     private static final int BATCH_SIZE = 5;
@@ -124,7 +134,7 @@ public class LLMReranker {
      */
     private List<Document> scoreBatch(String query, List<Document> batch) {
         try {
-            String raw = openAiChatModel.call(buildPrompt(query, batch));
+            String raw = chatModel.call(buildPrompt(query, batch));
             List<Double> scores = parseScores(raw);
 
             // 解析出的分数个数必须与文档数对齐，否则视为解析失败，保留原始顺序
