@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -105,5 +107,71 @@ class ResilienceChainTest {
 
         assertThat(elapsed).as("应在超时后很快返回，而非等满 5 秒")
                 .isLessThan(2_000);
+    }
+
+    // ===== 装饰顺序契约（守护 ResilienceChain 唯一的"技术卖点"）=====
+
+    @Test
+    @DisplayName("装饰顺序：Retry 在 CircuitBreaker 外侧 —— 单次 execute 的 3 次重试各自计入熔断统计")
+    void retrySitsOutsideCircuitBreaker() throws Exception {
+        LlmResilienceProperties p = fastProps();
+        p.setMaxAttempts(3);            // 一次 execute 内部共 3 次尝试
+        p.setMinimumNumberOfCalls(3);   // 熔断窗口刚好等于重试次数
+        p.setSlidingWindowSize(3);
+        ResilienceChain chain = new ResilienceChain("order-test", p);
+
+        Callable<String> fail = () -> {
+            throw new java.net.SocketTimeoutException("read timed out");
+        };
+
+        // 只调用一次 execute
+        try {
+            chain.execute(fail);
+        } catch (Exception ignored) {
+            // 预期失败
+        }
+
+        // 顺序正确 Retry → CircuitBreaker：3 次尝试各计一次失败 → 打满窗口 → 打开
+        // 顺序反转 CircuitBreaker → Retry：熔断器只看到 1 次调用 → 不足 minimumNumberOfCalls → 仍关闭
+        assertThat(chain.isCircuitOpen())
+                .as("Retry 必须在 CircuitBreaker 外侧：单次 execute 的 3 次重试应各自计入熔断统计")
+                .isTrue();
+    }
+
+    @Test
+    @DisplayName("Bulkhead 生效：并发超过上限的调用被直接拒绝")
+    void bulkheadRejectsOverflowConcurrentCall() throws Exception {
+        LlmResilienceProperties p = fastProps();
+        p.setMaxAttempts(1);
+        p.setMaxConcurrentCalls(1);
+        p.setTimeout(Duration.ofSeconds(10));
+        ResilienceChain chain = new ResilienceChain("bulkhead-test", p);
+
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        Thread first = new Thread(() -> {
+            try {
+                chain.execute(() -> {
+                    entered.countDown();
+                    release.await();
+                    return "done";
+                });
+            } catch (Exception ignored) {
+                // 主线程放行后正常返回
+            }
+        });
+        first.start();
+
+        assertThat(entered.await(5, TimeUnit.SECONDS))
+                .as("第一个调用应已进入被装饰方法").isTrue();
+
+        // 此时并发额度已被第一个调用占满，第二个并发调用应被 Bulkhead 拒绝
+        assertThatThrownBy(() -> chain.execute(() -> "second"))
+                .as("超过 maxConcurrentCalls 的调用必须被 Bulkhead 拒绝，而不是放行去执行")
+                .isInstanceOf(io.github.resilience4j.bulkhead.BulkheadFullException.class);
+
+        release.countDown();
+        first.join(5_000);
     }
 }
