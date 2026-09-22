@@ -110,6 +110,34 @@ class ResilienceChainTest {
                 .isLessThan(2_000);
     }
 
+    @Test
+    @DisplayName("超时后底层任务被真正中断，而不是被放弃后继续跑")
+    void interruptsTimedOutTask() throws Exception {
+        LlmResilienceProperties p = fastProps();
+        p.setMaxAttempts(1);
+        p.setTimeout(Duration.ofMillis(300));
+        ResilienceChain chain = new ResilienceChain("interrupt-test", p);
+
+        CountDownLatch interrupted = new CountDownLatch(1);
+
+        Callable<String> sleeping = () -> {
+            try {
+                Thread.sleep(30_000);
+            } catch (InterruptedException e) {
+                interrupted.countDown();
+                throw e;
+            }
+            return "never";
+        };
+
+        assertThatThrownBy(() -> chain.execute(sleeping))
+                .as("超时应抛出异常").isInstanceOf(Exception.class);
+
+        assertThat(interrupted.await(3, TimeUnit.SECONDS))
+                .as("超时后底层任务必须收到中断，否则被放弃的虚拟线程会无上界堆积")
+                .isTrue();
+    }
+
     // ===== 装饰顺序契约（守护 ResilienceChain 唯一的"技术卖点"）=====
 
     @Test

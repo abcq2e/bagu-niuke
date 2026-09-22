@@ -11,13 +11,11 @@ import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.timelimiter.TimeLimiter;
 import io.github.resilience4j.timelimiter.TimeLimiterConfig;
-import lombok.extern.slf4j.Slf4j;
 
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Predicate;
+import java.util.concurrent.FutureTask;
 
 /**
  * LLM 调用的四级韧性链，显式嵌套而非用 {@code Decorators} 组合。
@@ -40,13 +38,20 @@ import java.util.function.Predicate;
  * </ul>
  *
  * <h2>TimeLimiter 的载体</h2>
- * resilience4j 的 TimeLimiter 要求被装饰者返回 {@code CompletableFuture}，
+ * resilience4j 的 TimeLimiter 要求被装饰者返回 {@code Future}，
  * 而 {@code ChatModel.call()} 是阻塞方法。这里用 <b>Java 21 虚拟线程</b>执行器承载 ——
  * 虚拟线程创建代价极低，且不会与业务线程池争资源。
- * 超时后虚拟线程会被中断，但底层 HTTP 调用能否立即响应中断取决于客户端实现，
- * 因此超时保证的是<b>调用方不再等待</b>，而非一定终止底层请求。
+ *
+ * <p>被放弃的任务必须用 {@link FutureTask} 承载而非 {@code CompletableFuture}：
+ * 超时时 TimeLimiter 会对该 {@code Future} 调用 {@code cancel(true)}，
+ * 但 {@code CompletableFuture.cancel(boolean)} 的布尔参数在 JDK 实现中是<b>无效的</b>
+ * （interrupts are not used to control processing），不会给正在运行的线程发中断 ——
+ * 那时超时只是「调用方不再等待」，被放弃的任务仍会跑到底。{@code FutureTask.cancel(true)}
+ * 才会真正中断执行线程，因此这里能保证<b>超时后主动取消并中断底层任务</b>。
+ *
+ * <p>边界：中断信号已送达任务所在线程，但底层 HTTP 客户端能否立即响应中断取决于其实现 ——
+ * 对忽略中断的客户端，超时仍只保证「调用方不再等待」。
  */
-@Slf4j
 public class ResilienceChain {
 
     private final String name;
@@ -61,9 +66,7 @@ public class ResilienceChain {
 
         this.retry = Retry.of(name + "-retry", RetryConfig.custom()
                 .maxAttempts(props.getMaxAttempts())
-                // 指数退避 + 随机抖动：抖动避免多个实例同时重试造成尖峰。
-                // ⚠️ 若该重载不存在（resilience4j 各版本签名有差异），编译期即报错；
-                //    改用带 randomizationFactor 的三参重载即可，不要退回无抖动的版本
+                // 指数退避 + 随机抖动，抖动避免多实例同时重试造成尖峰
                 .intervalFunction(IntervalFunction.ofExponentialRandomBackoff(
                         props.getBackoffBase(), props.getBackoffMultiplier()))
                 .retryOnException(ResilienceChain::isRecoverable)
@@ -122,15 +125,13 @@ public class ResilienceChain {
     /** 按韧性链执行；失败时抛原始异常（由调用方决定是否降级）。 */
     public <T> T execute(Callable<T> action) throws Exception {
         // 最内层：超时（虚拟线程承载阻塞调用）
+        // 用 FutureTask 而非 CompletableFuture：超时时 TimeLimiter 会对该 Future 调用
+        // cancel(true)，只有 FutureTask 的 cancel(true) 会真正中断执行线程，
+        // CompletableFuture 的 cancel 不会 —— 那样超时后任务会继续跑，虚拟线程无上界堆积。
         Callable<T> withTimeout = () -> {
-            CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
-                try {
-                    return action.call();
-                } catch (Exception e) {
-                    throw new java.util.concurrent.CompletionException(e);
-                }
-            }, virtualExecutor);
-            return TimeLimiter.decorateFutureSupplier(timeLimiter, () -> future).call();
+            FutureTask<T> task = new FutureTask<>(action);
+            virtualExecutor.execute(task);
+            return TimeLimiter.decorateFutureSupplier(timeLimiter, () -> task).call();
         };
 
         // 由内向外逐层包裹
