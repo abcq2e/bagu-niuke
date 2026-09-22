@@ -54,6 +54,14 @@
             <artifactId>spring-cloud-starter-alibaba-sentinel</artifactId>
             <version>2023.0.3.3</version>
         </dependency>
+        <!-- resilience4j：LLM 调用的超时/重试/熔断/舱壁 -->
+        <!-- Spring Boot 的 dependencyManagement 不含 resilience4j，必须显式指定版本 -->
+        <!-- 2.2.0 是适配 Spring Boot 3.4 / Jakarta 的版本线 -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>2.2.0</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-web</artifactId>
