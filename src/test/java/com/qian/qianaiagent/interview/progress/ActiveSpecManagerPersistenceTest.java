@@ -1,11 +1,20 @@
 package com.qian.qianaiagent.interview.progress;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.qian.qianaiagent.config.StorageProperties;
+import com.qian.qianaiagent.util.ChatIdValidator;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
+
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,20 +61,50 @@ class ActiveSpecManagerPersistenceTest {
         assertThat(newManager(root).getSpec("never_seen")).isNull();
     }
 
-    @Test
-    @DisplayName("畸形 chatId 被净化，不会逃出目录")
-    void sanitizesMaliciousChatId(@TempDir Path root) {
-        ActiveSpecManager manager = newManager(root);
-        manager.updateSpec("../../etc/passwd", "恶意内容");
+    // ==================================================================
+    //  路径穿越：这个测试的写法本身踩过一次坑，别再退回去
+    // ==================================================================
+    //
+    // 上一版写的是「Files.list(specDir) 的每个名字都不含 .. / \」。
+    // 它对**空流**恒为真，而 init() 又无条件 createDirectories，于是
+    // `assertThat(dir).exists()` 恒真、`allMatch` 恒真 —— 把 fileOf 里的
+    // safeFileName 换成裸 chatId（即重新引入路径穿越）它照样全绿。
+    //
+    // 反过来写：断言**该存在的文件确实存在**。净化一旦失效，落盘位置就变了，
+    // 这条必然红；「目录里恰好只有它一个」再堵住「净化文件写了、同时还漏了别的」。
 
-        // 净化后文件名不含路径分隔符，且能按同一规则读回
+    @Test
+    @DisplayName("畸形 chatId 被净化：文件落在目录内、能按同一规则读回、不逃出目录")
+    void sanitizesMaliciousChatId(@TempDir Path root) throws Exception {
+        String malicious = "../../etc/passwd";
+        String safeName = ChatIdValidator.safeFileName(malicious);
+
+        // 前提断言：净化结果本身不含路径元字符（safeFileName 失效时先红在这么直白的地方）
+        assertThat(safeName).doesNotContain("..").doesNotContain("/").doesNotContain("\\");
+
+        ActiveSpecManager manager = newManager(root);
+        manager.updateSpec(malicious, "恶意内容");
+
         Path dir = root.resolve(".active-specs");
-        assertThat(dir).exists();
-        try (var files = java.nio.file.Files.list(dir)) {
+
+        // 1. 真正落盘的文件名是净化后的，且就在 .active-specs 里
+        Path expected = dir.resolve(safeName + ".json");
+        assertThat(expected).exists();
+
+        // 2. 能按同一规则读回（净化前后一致）—— 用全新实例走 loadSpec，绕开内存缓存
+        assertThat(newManager(root).getSpec(malicious)).isEqualTo("恶意内容");
+
+        // 3. 目录内恰好只有这一个文件 —— 空的 Files.list 不再能蒙混过关
+        try (var files = Files.list(dir)) {
             assertThat(files.map(p -> p.getFileName().toString()))
-                    .allMatch(name -> !name.contains("..") && !name.contains("/") && !name.contains("\\"));
-        } catch (Exception e) {
-            throw new AssertionError(e);
+                    .containsExactly(safeName + ".json");
+        }
+
+        // 4. 没有任何东西逃到 .active-specs 之外（真逃逸会在 root 下造出 etc/）
+        assertThat(root.resolve("etc")).doesNotExist();
+        try (var children = Files.list(root)) {
+            assertThat(children.map(p -> p.getFileName().toString()))
+                    .containsExactly(".active-specs");
         }
     }
 
@@ -109,5 +148,52 @@ class ActiveSpecManagerPersistenceTest {
 
         // 重启：全新实例内存为空，若磁盘文件还在就会被 loadSpec 复活
         assertThat(newManager(root).getSpec("chat_5")).isNull();
+    }
+
+    // ==================================================================
+    //  落盘失败的日志级别
+    // ==================================================================
+
+    @Test
+    @DisplayName("写盘失败记 error —— 用户更新了描述却没落盘是功能回归，不是缓存未命中")
+    void saveFailureIsLoggedAtError(@TempDir Path root) throws Exception {
+        // 让 specDir 落在一个「普通文件」底下：createDirectories 与后续写文件都必然失败
+        Files.writeString(root.resolve("blocker"), "not a directory");
+
+        StorageProperties storage = new StorageProperties();
+        storage.setRoot(root.toString());
+        storage.setActiveSpec("blocker/sub");
+
+        ActiveSpecManager manager = new ActiveSpecManager();
+        ReflectionTestUtils.setField(manager, "storage", storage);
+        manager.init();
+
+        ListAppender<ILoggingEvent> logs = captureLogs();
+        try {
+            manager.updateSpec("chat_savefail", "写不进磁盘的项目描述");
+
+            List<ILoggingEvent> events = logs.list.stream()
+                    .filter(e -> e.getFormattedMessage().contains("保存项目描述失败"))
+                    .toList();
+            assertThat(events)
+                    .as("保存失败必须留下痕迹（否则下面两条断言会因为「什么都没记」而假绿）")
+                    .isNotEmpty();
+            assertThat(events)
+                    .as("保存失败是功能回归（重启即失忆），必须是 error")
+                    .allMatch(e -> e.getLevel() == Level.ERROR);
+        } finally {
+            logbackLogger().detachAppender(logs);
+        }
+    }
+
+    private ListAppender<ILoggingEvent> captureLogs() {
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logbackLogger().addAppender(appender);
+        return appender;
+    }
+
+    private Logger logbackLogger() {
+        return (Logger) LoggerFactory.getLogger(ActiveSpecManager.class);
     }
 }
