@@ -12,6 +12,7 @@ logs/
 .claude/
 .quiz-cursor/
 .review-cursor/
+.active-specs/
 .superpowers/
 .vite/
 

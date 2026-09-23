@@ -60,6 +60,8 @@ services:
       - ability_profiles:/app/.ability-profiles
       - review_cursor:/app/.review-cursor
       - chat_memory:/app/data/chat-memory
+      # 🔴 当前生效的项目描述（ActiveSpecManager → /app/.active-specs/{chatId}.json）
+      - active_specs:/app/.active-specs
     restart: unless-stopped
     networks:
       - qian-net
@@ -84,6 +86,7 @@ volumes:
   ability_profiles:
   review_cursor:
   chat_memory:
+  active_specs:
 
 networks:
   qian-net:
