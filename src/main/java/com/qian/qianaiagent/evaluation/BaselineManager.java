@@ -90,7 +90,7 @@ public class BaselineManager {
      * @param baseline 基线数据
      */
     public void saveBaseline(Baseline baseline) {
-        Path filePath = toFilePath(baseline.getCaseName());
+        Path filePath = resolveFile(baseline.getCaseName());
         try {
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(baseline);
             Files.writeString(filePath, json);
@@ -111,7 +111,7 @@ public class BaselineManager {
      * @return 基线，不存在则返回 null
      */
     public Baseline loadBaseline(String caseName) {
-        Path filePath = toFilePath(caseName);
+        Path filePath = resolveFile(caseName);
         if (!Files.exists(filePath)) {
             // 探测不存在的基线现在是正常流程的一部分（判断是否首次运行），不该刷 warn
             log.debug("基线文件不存在: {}", filePath);
@@ -246,6 +246,42 @@ public class BaselineManager {
         // 安全化文件名：只保留中文、字母、数字
         String safeName = caseName.replaceAll("[^\\u4e00-\\u9fa5a-zA-Z0-9]", "_");
         return baselinesDir.resolve(safeName + ".json");
+    }
+
+    /**
+     * 用例名称 → <b>实际存在的</b>文件路径；都不存在时返回净化名（供新建）。
+     *
+     * <p>先试 {@link #toFilePath} 的净化名；找不到再扫描目录，按文件内的
+     * {@code caseName} 字段匹配 —— 命中就用那个文件。
+     *
+     * <p><b>为什么需要这一步</b>：{@code toFilePath} 会把空格等字符换成 {@code _}，
+     * 而人工命名的基线文件名里可能有空格（例如 {@code 搜索Spring AI教程.json}）。
+     * 两边对不上时的表现很隐蔽：用例照常跑、照常打分（{@code loadAllBaselines}
+     * 是按目录列举的），却<b>永远建不了基线</b>（这里按净化名找不到文件），
+     * 而且报告里不显示任何异常。保存也走本方法，避免在人工命名的那份旁边
+     * 又生出一个净化名的副本，两份各自漂移。
+     */
+    private Path resolveFile(String caseName) {
+        Path sanitized = toFilePath(caseName);
+        if (Files.exists(sanitized)) {
+            return sanitized;
+        }
+        File dir = baselinesDir.toFile();
+        File[] files = dir.listFiles((d, name) -> name.endsWith(".json"));
+        if (files != null) {
+            for (File file : files) {
+                try {
+                    Baseline candidate =
+                            objectMapper.readValue(Files.readString(file.toPath()), Baseline.class);
+                    if (caseName.equals(candidate.getCaseName())) {
+                        return file.toPath();
+                    }
+                } catch (IOException e) {
+                    log.debug("跳过无法解析的基线文件: {}", file.getName());
+                }
+            }
+        }
+        return sanitized;
     }
     /**
      * 基线数据 —— 一个人工确认过的"正确答案"快照。

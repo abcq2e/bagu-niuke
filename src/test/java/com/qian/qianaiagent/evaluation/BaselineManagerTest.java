@@ -157,6 +157,44 @@ class BaselineManagerTest {
                 "确定性上升 + Rubric 小幅波动应判为上升：" + report.getSummary());
     }
 
+    // 🔴 以下两条针对一个曾经很隐蔽的 bug：toFilePath 会把空格等字符换成 '_'，
+    // 于是「用例名里带空格、且文件名也按原样命名」的基线永远找不到 ——
+    // 用例照跑照打分（loadAllBaselines 是按目录列举的），却始终建不了基线。
+
+    @Test
+    void baselineWhoseFileNameContainsSpaceIsFound(@TempDir Path dir) throws Exception {
+        // 手工放一个文件名带空格的基线（净化名是 "我的_用例.json"，与本文件不同名）
+        String caseName = "我的 用例";
+        Files.writeString(dir.resolve("我的 用例.json"),
+                "{\"caseName\":\"" + caseName + "\",\"query\":\"q\","
+                        + "\"baselineDeterministicScore\":-1,\"baselineRubricScore\":-1}");
+
+        BaselineManager manager = new BaselineManager(dir.toString());
+
+        BaselineManager.Baseline loaded = manager.loadBaseline(caseName);
+
+        assertNotNull(loaded, "带空格的用例名必须能找到对应的基线文件");
+        assertEquals(caseName, loaded.getCaseName());
+    }
+
+    @Test
+    void autoEstablishUpdatesTheSpaceNamedFileInPlace(@TempDir Path dir) throws Exception {
+        String caseName = "我的 用例";
+        Path spaceFile = dir.resolve("我的 用例.json");
+        Files.writeString(spaceFile,
+                "{\"caseName\":\"" + caseName + "\",\"query\":\"q\","
+                        + "\"baselineDeterministicScore\":-1,\"baselineRubricScore\":-1}");
+
+        BaselineManager manager = new BaselineManager(dir.toString());
+        BaselineManager.ComparisonReport report = manager.compareWithBaseline(caseName, result(88, 77));
+
+        assertTrue(report.isNewBaseline(), "分数为 -1 哨兵时应自动建立基线");
+        assertEquals(88, manager.loadBaseline(caseName).getBaselineDeterministicScore(),
+                "新分数应写回那份带空格的文件");
+        assertFalse(Files.exists(dir.resolve("我的_用例.json")),
+                "不该在旁边另外生出一个净化名的副本，否则两份基线会各自漂移");
+    }
+
     @Test
     void loadAllBaselinesReadsEveryJsonFile(@TempDir Path dir) throws Exception {
         BaselineManager manager = new BaselineManager(dir.toString());

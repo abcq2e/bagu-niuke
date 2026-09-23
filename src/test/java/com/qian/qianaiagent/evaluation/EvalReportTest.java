@@ -212,6 +212,25 @@ class EvalReportTest {
     }
 
     @Test
+    @DisplayName("「用例文件不存在」的告警必须出现在报告正文里")
+    void missingBaselineFileWarningIsRendered() {
+        EvalReport report = EvalReport.builder()
+                .generatedAt(LocalDateTime.now())
+                .outcomes(List.of(scored("x", 100, 50,
+                        BaselineManager.ComparisonReport.builder()
+                                .caseName("x").hasBaseline(false).newBaseline(false)
+                                .summary("⚠️ 用例文件不存在: x")
+                                .build())))
+                .build();
+
+        // 此前渲染分支只在「新建基线」或「有基线可对比」时打印 summary，
+        // 这个分支什么都不打印 —— 于是「基线文件找不到」在报告里完全不可见。
+        assertThat(report.render())
+                .as("告警被静默吞掉的话，用例会看着一切正常却永远建不了基线")
+                .contains("用例文件不存在");
+    }
+
+    @Test
     @DisplayName("首次运行（无基线）不算回归")
     void firstRunIsNotRegression() {
         EvalReport report = EvalReport.builder()

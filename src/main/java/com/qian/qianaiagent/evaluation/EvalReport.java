@@ -134,6 +134,11 @@ public class EvalReport {
                     c.getBaselineDeterministicScore(), c.getNewDeterministicScore(), c.getDeltaDeterministic(),
                     c.getBaselineRubricScore(), c.getNewRubricScore(), c.getDeltaRubric()));
             sb.append("      │ ").append(c.getSummary()).append("\n");
+        } else if (c != null && c.getSummary() != null && !c.getSummary().isBlank()) {
+            // 🔴 既不是新建、也没有可比基线 —— 目前只有「用例文件不存在: xxx」这一类。
+            // 此前这个分支什么都不打印，于是「基线文件找不到」在报告里完全不可见：
+            // 用例看着一切正常，却永远建不了基线（曾因此让一条用例的基线一直是 -1）。
+            sb.append("      │ ").append(c.getSummary()).append("\n");
         }
 
         for (String d : o.getDeductions()) {
