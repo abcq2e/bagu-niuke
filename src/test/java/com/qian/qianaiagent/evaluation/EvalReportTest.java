@@ -171,8 +171,8 @@ class EvalReportTest {
     }
 
     @Test
-    @DisplayName("Rubric 大幅下降也算回归（修复前测不出来）")
-    void rubricDropCountsAsRegression() {
+    @DisplayName("Rubric 大幅下降不算回归 —— 实测同版本重跑波动就有 ±13 分")
+    void rubricDropIsNotRegression() {
         EvalReport report = EvalReport.builder()
                 .generatedAt(LocalDateTime.now())
                 .outcomes(List.of(EvalReport.CaseOutcome.builder()
@@ -181,6 +181,26 @@ class EvalReportTest {
                         .comparison(BaselineManager.ComparisonReport.builder()
                                 .caseName("x").hasBaseline(true)
                                 .deltaDeterministic(0).deltaRubric(-20)
+                                .build())
+                        .build()))
+                .build();
+
+        assertThat(report.hasRegression()).isFalse();
+        assertThat(report.exitCode()).isZero();
+        assertThat(report.conclusion()).isEqualTo("🟢 无回归");
+    }
+
+    @Test
+    @DisplayName("确定性下降才是回归 —— 与 Rubric 怎么变无关")
+    void deterministicDropIsRegressionEvenIfRubricRises() {
+        EvalReport report = EvalReport.builder()
+                .generatedAt(LocalDateTime.now())
+                .outcomes(List.of(EvalReport.CaseOutcome.builder()
+                        .caseName("x").scored(true)
+                        .deterministicScore(70).rubricScore(95)
+                        .comparison(BaselineManager.ComparisonReport.builder()
+                                .caseName("x").hasBaseline(true)
+                                .deltaDeterministic(-20).deltaRubric(30)
                                 .build())
                         .build()))
                 .build();
