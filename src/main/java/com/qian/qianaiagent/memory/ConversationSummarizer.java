@@ -1,5 +1,6 @@
 package com.qian.qianaiagent.memory;
 
+import com.qian.qianaiagent.agent.llm.ResilientChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
@@ -67,6 +68,13 @@ public class ConversationSummarizer {
                     .user(prompt)
                     .call()
                     .content();
+            // 🔴 主备模型全挂时 ResilientChatModel 返回兜底话术而不是抛异常。
+            // 若不在这里识别，就会把「[ERROR] AI 服务暂时不可用」当成对话摘要
+            // 写进 ChatMemory，并随之后的每一轮对话注入上下文 —— 必须走下面的失败分支。
+            if (ResilientChatModel.isUnavailableReply(summary)) {
+                throw new ResilientChatModel.UnavailableReplyException(
+                        "LLM 不可用，无法生成对话摘要");
+            }
             log.info("对话摘要完成，原始 {} 条消息 → {} 字摘要", messages.size(),
                     summary != null ? summary.length() : 0);
             return summary != null ? summary : "";
