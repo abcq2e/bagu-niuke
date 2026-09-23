@@ -17,6 +17,26 @@ if [ ! -f .env ]; then
   exit 9
 fi
 
+# 🔴 把 .env 注入进程环境。此前脚本只检查 .env 存在却从不读它 ——
+# 本地靠 application-local.yml 兜住才没暴露，CI 里没有那个文件，
+# API Key / 数据库密码就一个都传不进去。
+# 只导出「当前环境里还没有」的键，不覆盖调用方已显式设置的值。
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in ''|'#'*) continue ;; esac
+  key=${line%%=*}
+  # 去掉可能的 CR（.env 在 Windows 上可能存成 CRLF）
+  key=${key%$'\r'}
+  case "$key" in
+    ''|*[!A-Za-z0-9_]*) continue ;;
+  esac
+  # 已有值就不覆盖
+  if [ -z "${!key+x}" ]; then
+    value=${line#*=}
+    value=${value%$'\r'}
+    export "$key=$value"
+  fi
+done < .env
+
 echo "════ 开始离线评测回归检查 ════"
 echo "（这会真实调用 LLM，消耗 token 额度）"
 echo

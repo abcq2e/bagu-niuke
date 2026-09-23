@@ -1,7 +1,16 @@
 name: Agent 评测回归
 
+# ⚠️ 这个 job 会真实调用 LLM，每次运行都消耗 token 额度。
+#    所以只跑手动触发与 PR —— 不跑 push。
+#
+# 前置配置（仓库 Settings → Secrets and variables → Actions）：
+#   SPRING_AI_OPENAI_API_KEY     必填
+#   SPRING_AI_DASHSCOPE_API_KEY  必填
+#   SEARCH_API_API_KEY           必填（Tavily，用例「搜索Spring AI教程」要用）
+#   SPRING_AI_OPENAI_BASE_URL    可选，留空则用 https://api.deepseek.com
+# 未配置时下面「校验必需的 secrets」一步会显式失败，并说明缺哪个。
+
 on:
-  # 只跑手动触发与 PR —— 不跑 push，避免每次提交都烧 token
   workflow_dispatch:
   pull_request:
     branches: [main, master]
@@ -9,28 +18,7 @@ on:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: qian_ai_agent
-        ports: ['5432:5432']
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-      redis:
-        image: redis:7
-        ports: ['6379:6379']
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v4
@@ -41,12 +29,74 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: 准备 .env
+      - name: 校验必需的 secrets
+        env:
+          OPENAI_KEY: ${{ secrets.SPRING_AI_OPENAI_API_KEY }}
+          DASHSCOPE_KEY: ${{ secrets.SPRING_AI_DASHSCOPE_API_KEY }}
+          TAVILY_KEY: ${{ secrets.SEARCH_API_API_KEY }}
         run: |
-          cat > .env <<'EOF'
-          SPRING_AI_OPENAI_API_KEY=${{ secrets.SPRING_AI_OPENAI_API_KEY }}
-          SPRING_AI_DASHSCOPE_API_KEY=${{ secrets.SPRING_AI_DASHSCOPE_API_KEY }}
+          missing=""
+          [ -z "$OPENAI_KEY" ]    && missing="$missing SPRING_AI_OPENAI_API_KEY"
+          [ -z "$DASHSCOPE_KEY" ] && missing="$missing SPRING_AI_DASHSCOPE_API_KEY"
+          [ -z "$TAVILY_KEY" ]    && missing="$missing SEARCH_API_API_KEY"
+          if [ -n "$missing" ]; then
+            echo "❌ 缺少 secrets:$missing" >&2
+            echo "   请在 Settings → Secrets and variables → Actions 中配置后重跑" >&2
+            exit 1
+          fi
+
+      # 🔴 用项目自带的 docker-compose.yml 拉起依赖，而不是在 workflow 里另抄一份
+      #    service 定义 —— 两份配置迟早会走偏（库名、端口、口令对不上）。
+      #    数据库口令由 docker-compose.ci.yml 这个 override 覆盖成 CI 专用值，
+      #    本地那份一个字节都不动（原因见该文件的注释）。
+      - name: 准备 .env
+        env:
+          OPENAI_KEY: ${{ secrets.SPRING_AI_OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.SPRING_AI_OPENAI_BASE_URL }}
+          DASHSCOPE_KEY: ${{ secrets.SPRING_AI_DASHSCOPE_API_KEY }}
+          TAVILY_KEY: ${{ secrets.SEARCH_API_API_KEY }}
+        run: |
+          # 口令必须与 docker-compose.ci.yml 里的一致。
+          # REDIS_PORT 必须显式设 —— 应用默认是 16379，而 compose 映射的是 6379。
+          cat > .env <<EOF
+          PGVECTOR_PASSWORD=ci-only-pgvector-password
+          SPRING_DATASOURCE_PASSWORD=ci-only-mysql-root-password
+          SPRING_NEO4J_AUTHENTICATION_PASSWORD=ci-only-neo4j-password
+          REDIS_HOST=localhost
+          REDIS_PORT=6379
+          REDIS_PASSWORD=
+          SPRING_AI_OPENAI_API_KEY=${OPENAI_KEY}
+          SPRING_AI_OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.deepseek.com}
+          SPRING_AI_DASHSCOPE_API_KEY=${DASHSCOPE_KEY}
+          SEARCH_API_API_KEY=${TAVILY_KEY}
+          JWT_SECRET=ci-only-jwt-secret-at-least-256-bits-long-for-ci-runs-only
           EOF
+
+      - name: 启动依赖服务
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+
+      # compose 里没定义 healthcheck，--wait 只能等到「running」，
+      # 而 MySQL 容器 running 之后还要十几秒才可连接，必须自己等。
+      - name: 等待数据库就绪
+        run: |
+          echo "等待 MySQL…"
+          for i in $(seq 1 60); do
+            if docker compose exec -T mysql mysqladmin ping -h127.0.0.1 -uroot \
+                 -pci-only-mysql-root-password --silent >/dev/null 2>&1; then
+              echo "MySQL 就绪"; break
+            fi
+            if [ "$i" -eq 60 ]; then echo "❌ MySQL 超时未就绪" >&2; exit 1; fi
+            sleep 5
+          done
+
+          echo "等待 PostgreSQL…"
+          for i in $(seq 1 60); do
+            if docker compose exec -T pgvector pg_isready -U postgres >/dev/null 2>&1; then
+              echo "PostgreSQL 就绪"; break
+            fi
+            if [ "$i" -eq 60 ]; then echo "❌ PostgreSQL 超时未就绪" >&2; exit 1; fi
+            sleep 5
+          done
 
       - name: 跑评测回归
         run: ./scripts/eval-regression.sh
@@ -57,3 +107,8 @@ jobs:
         with:
           name: eval-report
           path: logs/eval/
+          if-no-files-found: warn
+
+      - name: 停掉依赖服务
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down -v

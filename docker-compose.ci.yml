@@ -1,0 +1,30 @@
+# CI 专用 override —— 只覆盖数据库口令，其余一律沿用 docker-compose.yml。
+#
+# 为什么不直接把 docker-compose.yml 里的口令改成 ${...}：
+#   本机 compose 里的 PostgreSQL 口令与 .env 的 PGVECTOR_PASSWORD 是**两个不同的值**
+#   （本地应用实际用的是 application-local.yml 里的那份）。改成变量引用后，
+#   一旦有人 docker compose down -v 重建数据卷，新容器会用 .env 的值初始化，
+#   而 application-local.yml 还是老口令 —— 应用就连不上了。
+#   所以本地那份一个字节都不动，CI 用这个 override 覆盖。
+#
+# 用法：
+#   docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
+#
+# 口令是 CI 专用的固定值：这些容器随 job 销毁，没必要进 secrets。
+# 注意与应用侧的环境变量保持一致：
+#   POSTGRES_PASSWORD            ↔ PGVECTOR_PASSWORD
+#   MYSQL_ROOT_PASSWORD          ↔ SPRING_DATASOURCE_PASSWORD
+#   NEO4J_AUTH 的口令部分         ↔ SPRING_NEO4J_AUTHENTICATION_PASSWORD
+
+services:
+  pgvector:
+    environment:
+      POSTGRES_PASSWORD: ci-only-pgvector-password
+
+  mysql:
+    environment:
+      MYSQL_ROOT_PASSWORD: ci-only-mysql-root-password
+
+  neo4j:
+    environment:
+      NEO4J_AUTH: neo4j/ci-only-neo4j-password
