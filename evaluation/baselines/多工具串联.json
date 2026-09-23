@@ -1,0 +1,24 @@
+{
+  "caseName": "多工具串联",
+  "query": "请先检索本地知识库了解 Spring AI，再用搜索引擎查一下它的最新版本动态，最后用两三句话总结。",
+  "createdAt": "2026-09-22T10:00:00",
+  "expectedBehavior": {
+    "expectedToolCalls": [
+      {
+        "toolName": "searchKnowledgeBase",
+        "paramContains": null,
+        "resultContains": null
+      },
+      {
+        "toolName": "searchWeb",
+        "paramContains": null,
+        "resultContains": null
+      }
+    ],
+    "expectedResponseKeywords": ["Spring AI"],
+    "maxToolCalls": 8
+  },
+  "baselineDeterministicScore": -1,
+  "baselineRubricScore": -1,
+  "notes": "覆盖「同一任务内先后调用 ≥2 个工具」的路径，验证 trace 步骤顺序与 maxSteps 预算。paramContains 全部留空 —— 工具参数由 LLM 自由生成，锁死子串会让用例随机失败（这条经验来自既有的 对比SpringAI与LangChain4j 用例）。分数 -1 表示尚未建立基线。"
+}

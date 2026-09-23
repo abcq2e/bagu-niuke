@@ -107,15 +107,32 @@ class BaselineToolNameTest {
         }
     }
 
+    /**
+     * 用例必须声明至少一项可检查的期望 —— 工具调用或回答关键词。
+     *
+     * <p>关键词<b>允许留空</b>：例如「工具失败自愈」这条用例，工具必然失败，
+     * 无法预知模型用哪个词表达「读不到」，锁死关键词只会让用例随机失败。
+     * {@link DeterministicScorer#checkResponseKeywords} 对空关键词列表本就跳过检查，
+     * 所以留空是评测链路上合法的一种配置，而不是漏写。
+     *
+     * <p>但整个用例不能什么期望都没有 —— 那样跑出来的分数毫无意义。
+     * 这条守卫只防「空转用例」，工具名是否真实存在仍由
+     * {@link #everyExpectedToolNameIsActuallyRegistered()} 负责。
+     */
     @Test
-    void expectedResponseKeywordsAreNotEmpty() throws Exception {
+    void everyCaseDeclaresSomeExpectation() throws Exception {
         List<BaselineManager.Baseline> cases = loadBaselineFiles();
 
         for (BaselineManager.Baseline c : cases) {
-            assertTrue(c.getExpectedBehavior() != null
-                            && c.getExpectedBehavior().getExpectedResponseKeywords() != null
-                            && !c.getExpectedBehavior().getExpectedResponseKeywords().isEmpty(),
-                    "用例 [" + c.getCaseName() + "] 没有声明期望的回答关键词");
+            ExpectedBehavior expected = c.getExpectedBehavior();
+            assertTrue(expected != null, "用例 [" + c.getCaseName() + "] 没有 expectedBehavior");
+
+            boolean hasToolCalls = expected.getExpectedToolCalls() != null
+                    && !expected.getExpectedToolCalls().isEmpty();
+            boolean hasKeywords = expected.getExpectedResponseKeywords() != null
+                    && !expected.getExpectedResponseKeywords().isEmpty();
+            assertTrue(hasToolCalls || hasKeywords,
+                    "用例 [" + c.getCaseName() + "] 既没有声明期望的工具调用，也没有声明期望的回答关键词");
         }
     }
 }
