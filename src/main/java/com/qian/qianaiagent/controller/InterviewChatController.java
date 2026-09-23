@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
 import java.util.List;
@@ -85,10 +86,15 @@ public class InterviewChatController {
                 .concatWith(Flux.just("[DONE]"))
                 .subscribeOn(Schedulers.fromExecutor(taskExecutor))
                 .doOnError(e -> log.error("❌ SSE 流异常: {}", e.getMessage(), e))
-                .doOnComplete(() -> {
-                    // 🔴 流结束后同步保存画像（含 userId 冗余，跨会话恢复用）
+                // 🔴 客户端断线时 Flux 被 cancel 而非 complete：
+                //    - doOnComplete 不会触发 → 画像保存被跳过（有 10s 定时兜底，但会延迟）
+                //    - doFinally 无论完成/取消/出错都会触发 → 在这里补保存
+                .doFinally(signal -> {
+                    if (signal == reactor.core.publisher.SignalType.CANCEL) {
+                        log.warn("🔌 客户端断线，流被取消: chatId={}", finalChatId);
+                    }
                     userAbilityService.saveProfile(finalChatId, userId);
-                    log.info("✅ SSE 流完成: chatId={}", finalChatId);
+                    log.info("✅ SSE 流结束({}), chatId={}", signal, finalChatId);
                 });
     }
 
@@ -136,11 +142,17 @@ public class InterviewChatController {
         return wrongQuestionReviewService.doReviewChat(message, finalChatId, finalSourceId, userId)
                 .concatWith(Flux.just("[DONE]"))
                 .subscribeOn(Schedulers.fromExecutor(taskExecutor))
-                .doOnComplete(() -> {
+                .doOnError(e -> log.error("❌ 复习 SSE 流异常: {}", e.getMessage(), e))
+                // 🔴 与 doChat 同源问题：客户端断线时 Flux 被 cancel 而非 complete，
+                //    doOnComplete 不触发 → 原始面试的画像保存被跳过。改用 doFinally 兜住。
+                //    注意这里保存的是 finalSourceId（原始面试会话），不是 finalChatId。
+                .doFinally(signal -> {
+                    if (signal == SignalType.CANCEL) {
+                        log.warn("🔌 客户端断线，复习流被取消: chatId={}", finalChatId);
+                    }
                     userAbilityService.saveProfile(finalSourceId, userId);
-                    log.info("✅ 复习 SSE 流完成: chatId={}", finalChatId);
-                })
-                .doOnError(e -> log.error("❌ 复习 SSE 流异常: {}", e.getMessage(), e));
+                    log.info("✅ 复习 SSE 流结束({}), chatId={}", signal, finalChatId);
+                });
     }
 
     /**
