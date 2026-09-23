@@ -124,6 +124,39 @@ class BaselineManagerTest {
         assertTrue(report.getSummary().contains("持平"));
     }
 
+    // 🔴 以下两条专门钉住「compareWithBaseline 确实委托给了 RegressionPolicy」。
+    // 上面三条用例的 delta 都远离阈值，新旧口径结论相同，抓不住口径回退。
+    // 这里取的是新旧口径**真正分叉**的输入。
+
+    @Test
+    void smallRubricDipIsFlatNotRegression(@TempDir Path dir) {
+        BaselineManager manager = new BaselineManager(dir.toString());
+        manager.saveBaseline(caseWithScore("用例E", 80, 70));
+
+        // Δ确定性 = 0、Δrubric = -5（在 10 分容差内）。
+        // 旧口径见 deltaRubric < 0 就报「分数下降」；新口径视其为 LLM 打分波动 → 持平。
+        BaselineManager.ComparisonReport report = manager.compareWithBaseline("用例E", result(80, 65));
+
+        assertEquals(0, report.getDeltaDeterministic());
+        assertEquals(-5, report.getDeltaRubric());
+        assertTrue(report.getSummary().contains("持平"),
+                "Rubric 小幅波动必须判为持平，退回旧口径会误报「分数下降」：" + report.getSummary());
+    }
+
+    @Test
+    void deterministicRiseWithSmallRubricDipIsRise(@TempDir Path dir) {
+        BaselineManager manager = new BaselineManager(dir.toString());
+        manager.saveBaseline(caseWithScore("用例F", 80, 70));
+
+        // Δ确定性 = +5、Δrubric = -5（在容差内）。旧口径报「下降」，新口径报「上升」。
+        BaselineManager.ComparisonReport report = manager.compareWithBaseline("用例F", result(85, 65));
+
+        assertEquals(5, report.getDeltaDeterministic());
+        assertEquals(-5, report.getDeltaRubric());
+        assertTrue(report.getSummary().contains("分数上升"),
+                "确定性上升 + Rubric 小幅波动应判为上升：" + report.getSummary());
+    }
+
     @Test
     void loadAllBaselinesReadsEveryJsonFile(@TempDir Path dir) throws Exception {
         BaselineManager manager = new BaselineManager(dir.toString());
