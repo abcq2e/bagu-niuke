@@ -44,6 +44,9 @@ public class StorageProperties {
     /** 复习游标（相对 root） */
     private String reviewCursor = ".review-cursor";
 
+    /** 当前生效的项目描述（相对 root） */
+    private String activeSpec = ".active-specs";
+
     private final Retention retention = new Retention();
 
     public Path chatMemoryPath() {
@@ -64,6 +67,10 @@ public class StorageProperties {
 
     public Path reviewCursorPath() {
         return resolve(reviewCursor);
+    }
+
+    public Path activeSpecPath() {
+        return resolve(activeSpec);
     }
 
     private Path resolve(String subDir) {
@@ -118,6 +125,14 @@ public class StorageProperties {
 
     public void setReviewCursor(String reviewCursor) {
         this.reviewCursor = reviewCursor;
+    }
+
+    public String getActiveSpec() {
+        return activeSpec;
+    }
+
+    public void setActiveSpec(String activeSpec) {
+        this.activeSpec = activeSpec;
     }
 
     public Retention getRetention() {

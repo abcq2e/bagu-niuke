@@ -9,6 +9,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+import com.qian.qianaiagent.config.StorageProperties;
+import com.qian.qianaiagent.util.ChatIdValidator;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Resource;
+
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Optional;
+
 /**
  * 当前有效项目描述管理器（覆盖式 vs 对话历史的追加式）
  * <p>
@@ -21,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * 设计原则：
  * <ul>
- *   <li>不做持久化 —— 会话结束或超时后自然失效，也不影响磁盘文件</li>
+ *   <li>落盘持久化 —— 服务重启后仍能恢复「当前项目描述」，避免面试官失忆</li>
  *   <li>与 ChatMemory 分离 —— ActiveSpec 管"当前是什么"，ChatMemory 管"聊过什么"</li>
  *   <li>不重置已考题指纹 —— 用户答过的知识点即使换项目也视为已掌握</li>
  * </ul>
@@ -32,6 +46,30 @@ public class ActiveSpecManager {
 
     /** 每个会话 -> 当前生效的项目描述 + 最后访问时间 */
     private final Map<String, Entry> activeSpecs = new ConcurrentHashMap<>();
+
+    /**
+     * 统一存储路径配置。
+     * <p>
+     * 此前本类<b>不做持久化</b>（见类注释），导致服务重启后面试官忘记候选人项目背景 ——
+     * 用户可直接感知的功能缺陷。改为落盘后，该注释已同步更新。
+     */
+    @Resource
+    private StorageProperties storage;
+
+    private final ObjectMapper mapper = new ObjectMapper()
+            .enable(SerializationFeature.INDENT_OUTPUT);
+
+    private Path specDir;
+
+    @PostConstruct
+    public void init() {
+        specDir = storage.activeSpecPath();
+        try {
+            Files.createDirectories(specDir);
+        } catch (IOException e) {
+            log.warn("无法创建项目描述目录: {}", e.getMessage());
+        }
+    }
 
     /** 空闲多久后清理。对齐 QuizApp.evictExpiredEntries 的既有口径（2 小时）。 */
     private static final Duration IDLE_TTL = Duration.ofHours(2);
@@ -57,6 +95,7 @@ public class ActiveSpecManager {
         } else {
             log.info("📋 新项目描述已设置: chatId={}, specLen={}", chatId, spec.length());
         }
+        saveSpec(chatId);
     }
 
     /**
@@ -65,7 +104,13 @@ public class ActiveSpecManager {
     public String getSpec(String chatId) {
         Entry entry = activeSpecs.get(chatId);
         if (entry == null) {
-            return null;
+            // 内存未命中 —— 可能是服务刚重启，尝试从磁盘恢复
+            entry = loadSpec(chatId);
+            if (entry == null) {
+                return null;
+            }
+            activeSpecs.put(chatId, entry);
+            log.info("📂 磁盘加载项目描述: chatId={}, specLen={}", chatId, entry.spec().length());
         }
         touch(chatId, entry);
         return entry.spec();
@@ -177,5 +222,59 @@ public class ActiveSpecManager {
     @Scheduled(fixedDelayString = "${qian.memory.active-spec.evict-interval-ms:1800000}")
     public void evictExpiredScheduled() {
         evictExpired(System.currentTimeMillis(), IDLE_TTL);
+    }
+
+    // ===== 持久化 =====
+
+    /**
+     * 原子写盘：先写临时文件再 {@code ATOMIC_MOVE}。
+     *
+     * <p>不沿用 {@code SequentialRotationService.saveCursor} 的直接覆盖写 ——
+     * 那是既有的非原子写（写到一半崩溃会留下截断的 JSON），本类不扩散该模式。
+     */
+    private void saveSpec(String chatId) {
+        Entry entry = activeSpecs.get(chatId);
+        if (entry == null || specDir == null) {
+            return;
+        }
+        Path file = fileOf(chatId);
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        try {
+            mapper.writeValue(tmp.toFile(), entry);
+            try {
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING,
+                        StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                // 少数文件系统不支持原子移动，退化为普通替换（仍是先写临时文件）
+                Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException e) {
+            log.warn("保存项目描述失败: chatId={}, err={}", chatId, e.getMessage());
+        }
+    }
+
+    private Entry loadSpec(String chatId) {
+        if (specDir == null) {
+            return null;
+        }
+        Path file = fileOf(chatId);
+        if (!Files.exists(file)) {
+            return null;
+        }
+        try {
+            return mapper.readValue(file.toFile(), Entry.class);
+        } catch (IOException e) {
+            log.warn("加载项目描述失败: chatId={}, err={}", chatId, e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * 文件名用 {@link ChatIdValidator#safeFileName} 净化 —— 与
+     * {@code .quiz-cursor/}、{@code .review-cursor/} 同模式，chatId 由客户端提供，
+     * 不净化就能靠 {@code ../} 写到目录外。
+     */
+    private Path fileOf(String chatId) {
+        return specDir.resolve(ChatIdValidator.safeFileName(chatId) + ".json");
     }
 }
