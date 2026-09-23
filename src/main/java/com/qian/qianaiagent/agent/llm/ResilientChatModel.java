@@ -33,9 +33,14 @@ import java.util.List;
  * 流式路径另用 Reactor 原生算子实现保护（见下）。这是有意的边界，不是遗漏。
  *
  * <h2>全挂时为什么不抛异常</h2>
- * 返回兜底话术而非抛异常，是为了保持与 {@code QuizApp.java:584} 现有
- * {@code onErrorResume} 行为一致、前端契约不变。
+ * 返回兜底话术而非抛异常，是为了与 {@code QuizApp} 的 SSE 错误文案保持同一形态、
+ * 前端契约不变。
  * <b>代价是调用方无法感知失败，日志成为唯一线索</b>，因此此处必须记 ERROR 级。
+ * <p>这个取舍<b>只对 SSE 路径成立</b>。评估 / 摄入等<b>非 SSE 路径</b>拿到那段文案时
+ * 必须显式失败 —— 它们是「把模型输出当数据用」的消费方（JSON 解析、RAGAS 指标、
+ * 关键词元数据），把「服务不可用」当成模型答案会静默污染评分与向量库。
+ * 它们应当用 {@link #isUnavailableReply(String)} 识别并抛异常（见
+ * {@link UnavailableReplyException}）。
  *
  * <h2>流式路径</h2>
  * Spring AI 的 {@code stream()} 返回的是冷流（{@code Flux.deferContextual}）：
@@ -58,6 +63,37 @@ import java.util.List;
 @Slf4j
 public class ResilientChatModel implements ChatModel {
 
+    /**
+     * 主备全挂时返回的兜底话术。
+     *
+     * <p>非 SSE 路径（评估、摄入等）必须显式识别它并失败 ——
+     * 否则错误文案会被当成模型答案，静默污染评估分数与向量库元数据。
+     *
+     * <p>内容是<b>前端契约</b>的一部分（与 {@code QuizApp} 的 SSE 错误文案同形），
+     * 改动会直接改变用户看到的文案。
+     */
+    public static final String UNAVAILABLE_REPLY = "[ERROR] AI 服务暂时不可用，请稍后重试";
+
+    /** 判断一段模型输出是否为兜底话术。 */
+    public static boolean isUnavailableReply(String text) {
+        return UNAVAILABLE_REPLY.equals(text);
+    }
+
+    /**
+     * 「兜底话术被当成模型答案」时抛出的异常。
+     *
+     * <p>为什么需要一个专属类型而不是裸的 {@link IllegalStateException}：
+     * {@code LLMReranker} 对本就是「尽力而为」的调用失败有既有的降级分支
+     * （{@code catch (Exception)} 后退回原始排序）。这层降级对「某批分数没解析出来」
+     * 是对的，但会把「模型整体不可用」一起吞掉，让故障重新变回静默。
+     * 专属类型让那两处降级分支能<b>只放行它</b>，其余异常照旧降级。
+     */
+    public static class UnavailableReplyException extends IllegalStateException {
+        public UnavailableReplyException(String message) {
+            super(message);
+        }
+    }
+
     private final ChatModel primary;
     private final ChatModel fallback;
     private final ResilienceChain primaryChain;
@@ -74,7 +110,9 @@ public class ResilientChatModel implements ChatModel {
      * @param primary          主模型
      * @param fallback         备模型，可为 null（表示无备选，直接走兜底）
      * @param props            韧性参数
-     * @param unavailableReply 主备全挂时返回的话术
+     * @param unavailableReply 主备全挂时返回的话术。生产装配处固定传
+     *                         {@link #UNAVAILABLE_REPLY}；{@link #isUnavailableReply(String)}
+     *                         也只认这个值，因此该参数只作测试替身用，不要传别的文案
      */
     public ResilientChatModel(ChatModel primary, ChatModel fallback,
                               LlmResilienceProperties props, String unavailableReply) {

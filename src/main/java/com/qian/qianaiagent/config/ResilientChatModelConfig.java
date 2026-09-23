@@ -17,55 +17,56 @@ import org.springframework.context.annotation.Primary;
  * {@code RagasEvaluator} 等）。用 @Primary 让它们<b>自动</b>获得保护，
  * 而不必逐个改注入点 —— 漏改一个就是「有的路径没保护」的隐形缺口。
  *
- * <h2>备模型用 ObjectProvider 而非直接注入</h2>
- * DashScope 的 ChatModel bean 由 starter 自动装配，bean 名未经运行验证。
- * 用 {@link ObjectProvider} 按类型惰性取，取不到就退化为「无备选」，
- * <b>不会因为备模型缺失导致应用起不来</b>。
+ * <h2>主模型是硬依赖，备模型是软依赖</h2>
+ * <ul>
+ *   <li><b>主模型（{@code openAiChatModel}）是硬依赖</b>：缺失即<b>启动失败</b>，
+ *       这是<b>有意</b>的 —— 没有主模型的「韧性链」只是掩盖配置错误。
+ *       注意 Spring 此时的报错信息具有误导性（"expected at least 1 bean"），
+ *       即使容器里明明还有别的 {@code ChatModel}：{@code @Qualifier} 是<b>按名字</b>
+ *       限定，找不到那个名字就是找不到，与类型的候选数量无关。</li>
+ *   <li><b>备模型（{@code dashscopeChatModel}）是软依赖</b>：用 {@link ObjectProvider}
+ *       惰性取，取不到就退化为「主模型 + 兜底话术」，<b>不会因为备模型缺失导致应用起不来</b>。</li>
+ * </ul>
  *
- * <h2>为什么不必额外排除「自己」（已实测，勿凭直觉加代码）</h2>
- * 有个看起来很像坑的地方：{@code allChatModels.stream()} 会不会把<b>正在创建中的
- * {@code resilientChatModel} 自己</b>也枚举出来？真如此，下一行的
- * {@code filter(m -> !(m == primary))} 就可能选中自己当备模型，得到
- * 「主模型失败 → 降级到自己 → 又失败 → 降级到自己」的<b>无限递归</b>。
+ * <h2>备模型按 bean 名显式绑定，不靠自动配置顺序</h2>
+ * 类型枚举 + {@code findFirst()} 曾在这里埋过一个静默陷阱：项目实际有<b>三个</b>
+ * 自动装配出来的 {@code ChatModel}（{@code openAiChatModel}、{@code dashscopeChatModel}、
+ * {@code ollamaChatModel}），{@code findFirst()} 取到谁<b>只取决于自动配置的注册顺序</b> ——
+ * 它当时选中 DashScope，仅仅因为 {@code com.alibaba...} 排在
+ * {@code org.springframework.ai.model.ollama...} 前面，是包名字母序的巧合。
+ * 任何一条变化（新增排序更靠前的 provider、starter 改名/移除）都会让备模型
+ * <b>静默变成 {@code ollamaChatModel}</b>：一个本地 {@code localhost:11434} 的服务，
+ * 而它没跑，于是每次故障都要白烧 {@code maxAttempts × 退避} 才落到兜底话术。
+ * 因此这里改为按名字绑定：意图写在代码里，而不是交给注册顺序。
  *
- * <p>实测（{@code ResilientChatModelConfigTest}，配主备两个 bean、在 stream 上打点枚举）
- * 该担忧<b>不成立</b>：枚举结果恰好是两个裸 {@code ChatModel}，没有 {@code ResilientChatModel}。
- * 原因是 Spring 在 {@code isSelfReference} 里排除了「当前正在创建的 bean 名」，
- * 且 {@code @Bean} 方法的 singleton factory 要等工厂方法返回后才注册，
- * 此刻 {@code getBean} 自己也拿不到 early reference。
- *
- * <p>因此这里<b>刻意不加</b> {@code filter(m -> !(m instanceof ResilientChatModel))} ——
- * 一行永远不会命中的防御代码，只会让下一个人以为它保护了什么。
- * 真正的保护是那条断言 {@code isNotInstanceOf(ResilientChatModel.class)} 的测试：
- * 哪天 Spring 改了行为，它会变红，而不是靠这行代码静默兜住。
+ * <h2>为什么不会把「自己」当备模型</h2>
+ * {@code @Qualifier("dashscopeChatModel")} 是<b>按名字</b>取 bean，而本 {@code @Bean}
+ * 方法注册的名字是 {@code resilientChatModel} —— 名字不同，拿不到自己。
+ * 相比之下，曾经的「按类型枚举再过滤掉主模型」写法就得靠「排除自己」的额外保证。
+ * {@code fallbackIsTheOtherBeanNotSelf} 仍保留作回归：它断言 {@code fallback}
+ * 既非空、也{@code isNotInstanceOf(ResilientChatModel.class)}，
+ * 哪天绑定方式被改回类型枚举，它会变红。
  */
 @Slf4j
 @Configuration
 public class ResilientChatModelConfig {
 
-    /** 主备全挂时返回的话术。与 QuizApp.java:584 现有的错误文案保持同一形态。 */
-    private static final String UNAVAILABLE_REPLY =
-            "[ERROR] AI 服务暂时不可用，请稍后重试";
-
     @Bean
     @Primary
     public ChatModel resilientChatModel(
             @Qualifier("openAiChatModel") ChatModel primary,
-            ObjectProvider<ChatModel> allChatModels,
+            @Qualifier("dashscopeChatModel") ObjectProvider<ChatModel> fallbackProvider,
             LlmResilienceProperties props) {
 
-        // 按 bean 名找备模型；找不到则无备选
-        ChatModel fallback = allChatModels.stream()
-                .filter(m -> !(m == primary))
-                .findFirst()
-                .orElse(null);
+        // 按 bean 名取备模型；该名字不存在时 getIfAvailable() 返回 null（不会启动失败）
+        ChatModel fallback = fallbackProvider.getIfAvailable();
 
         if (fallback == null) {
-            log.warn("⚠️ 未找到备选 ChatModel，降级链退化为「主模型 + 兜底话术」");
+            log.warn("⚠️ 未找到备选 ChatModel(dashscopeChatModel)，降级链退化为「主模型 + 兜底话术」");
         } else {
             log.info("✅ 备选 ChatModel 已就绪: {}", fallback.getClass().getSimpleName());
         }
 
-        return new ResilientChatModel(primary, fallback, props, UNAVAILABLE_REPLY);
+        return new ResilientChatModel(primary, fallback, props, ResilientChatModel.UNAVAILABLE_REPLY);
     }
 }
