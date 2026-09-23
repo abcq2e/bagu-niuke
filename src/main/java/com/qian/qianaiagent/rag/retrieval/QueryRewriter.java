@@ -1,5 +1,6 @@
 package com.qian.qianaiagent.rag.retrieval;
 
+import com.qian.qianaiagent.agent.llm.ResilientChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatModel;
@@ -105,6 +106,13 @@ public class QueryRewriter {
         if (result == null || result.isBlank()) {
             return trimmed;
         }
+        // 🔴 LLM 全挂时 ResilientChatModel 返回兜底话术而非抛异常。若不识别，
+        //    这段错误文案会被当成「重写后的查询」去检索，而且会被写进下面的缓存 ——
+        //    之后所有相同的提问都复用这串错误文字。
+        if (ResilientChatModel.isUnavailableReply(result)) {
+            log.warn("⚠️ LLM 不可用，查询重写降级为原句");
+            return trimmed;
+        }
         String cleaned = result.trim();
 
         // 缓存结果（仅缓存与原文不同的结果）
@@ -155,11 +163,18 @@ public class QueryRewriter {
 
                 假设性回答：""".formatted(question);
 
-        return chatClientBuilder.build()
+        String content = chatClientBuilder.build()
                 .prompt()
                 .user(hydePrompt)
                 .call()
                 .content();
+        // 🔴 同理：兜底话术不是「假设答案」，拿它去向量检索只会检索到不相干的内容。
+        //    返回 null，调用方 HyDESearchService 对 null 与异常一样会降级为原始问题检索。
+        if (ResilientChatModel.isUnavailableReply(content)) {
+            log.warn("⚠️ LLM 不可用，跳过 HyDE，降级为原始问题检索");
+            return null;
+        }
+        return content;
     }
 
 }
