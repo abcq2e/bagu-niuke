@@ -1,10 +1,12 @@
 package com.qian.qianaiagent.evaluation;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -166,5 +168,65 @@ class EvalReportTest {
                 .build();
 
         assertTrue(report.render().contains("12s"), "预期 12s，实际:\n" + report.render());
+    }
+
+    @Test
+    @DisplayName("Rubric 大幅下降也算回归（修复前测不出来）")
+    void rubricDropCountsAsRegression() {
+        EvalReport report = EvalReport.builder()
+                .generatedAt(LocalDateTime.now())
+                .outcomes(List.of(EvalReport.CaseOutcome.builder()
+                        .caseName("x").scored(true)
+                        .deterministicScore(90).rubricScore(50)
+                        .comparison(BaselineManager.ComparisonReport.builder()
+                                .caseName("x").hasBaseline(true)
+                                .deltaDeterministic(0).deltaRubric(-20)
+                                .build())
+                        .build()))
+                .build();
+
+        assertThat(report.hasRegression()).isTrue();
+        assertThat(report.exitCode()).isEqualTo(1);
+        assertThat(report.conclusion()).contains("分数下降");
+    }
+
+    @Test
+    @DisplayName("Rubric 小幅波动不算回归，且结论与正文不矛盾")
+    void smallRubricNoiseIsNotRegression() {
+        EvalReport report = EvalReport.builder()
+                .generatedAt(LocalDateTime.now())
+                .outcomes(List.of(EvalReport.CaseOutcome.builder()
+                        .caseName("x").scored(true)
+                        .deterministicScore(90).rubricScore(85)
+                        .comparison(BaselineManager.ComparisonReport.builder()
+                                .caseName("x").hasBaseline(true)
+                                .deltaDeterministic(0).deltaRubric(-5)
+                                .summary("🟡 分数持平。")
+                                .build())
+                        .build()))
+                .build();
+
+        assertThat(report.hasRegression()).isFalse();
+        assertThat(report.exitCode()).isZero();
+        assertThat(report.conclusion()).isEqualTo("🟢 无回归");
+    }
+
+    @Test
+    @DisplayName("首次运行（无基线）不算回归")
+    void firstRunIsNotRegression() {
+        EvalReport report = EvalReport.builder()
+                .generatedAt(LocalDateTime.now())
+                .outcomes(List.of(EvalReport.CaseOutcome.builder()
+                        .caseName("x").scored(true)
+                        .deterministicScore(50).rubricScore(40)
+                        .comparison(BaselineManager.ComparisonReport.builder()
+                                .caseName("x").hasBaseline(false).newBaseline(true)
+                                .summary("🆕 已自动建立基线")
+                                .build())
+                        .build()))
+                .build();
+
+        assertThat(report.hasRegression()).isFalse();
+        assertThat(report.exitCode()).isZero();
     }
 }

@@ -48,12 +48,9 @@ public class EvalReport {
                 .orElse(0.0);
     }
 
-    /** 是否存在分数下降的用例 */
+    /** 是否存在回归的用例。判定规则见 {@link RegressionPolicy}。 */
     public boolean hasRegression() {
-        return outcomes.stream().anyMatch(o -> {
-            BaselineManager.ComparisonReport c = o.getComparison();
-            return c != null && c.isHasBaseline() && c.getDeltaDeterministic() < 0;
-        });
+        return outcomes.stream().anyMatch(o -> RegressionPolicy.isRegressed(o.getComparison()));
     }
 
     /** 进程退出码：有回归 → 1，否则 → 0（便于接 CI） */
@@ -66,12 +63,12 @@ public class EvalReport {
         if (outcomes.isEmpty()) {
             return "⚠️ 未找到任何用例，请检查 evaluation/baselines/ 目录";
         }
-        long regressions = outcomes.stream().filter(o -> {
-            BaselineManager.ComparisonReport c = o.getComparison();
-            return c != null && c.isHasBaseline() && c.getDeltaDeterministic() < 0;
-        }).count();
+        long regressions = outcomes.stream()
+                .filter(o -> RegressionPolicy.isRegressed(o.getComparison()))
+                .count();
         if (regressions > 0) {
-            return "🔴 " + regressions + " 个用例分数下降，请检查最近改动";
+            return "🔴 " + regressions + " 个用例分数下降，请检查最近改动"
+                    + "（" + RegressionPolicy.describe() + "）";
         }
         long newly = outcomes.stream()
                 .filter(o -> o.getComparison() != null && o.getComparison().isNewBaseline())

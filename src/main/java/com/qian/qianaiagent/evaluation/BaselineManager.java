@@ -193,14 +193,9 @@ public class BaselineManager {
         int deltaDeterministic = newResult.getDeterministicScore() - baseline.getBaselineDeterministicScore();
         int deltaRubric = newResult.getRubricScore() - baseline.getBaselineRubricScore();
 
-        String verdict;
-        if (deltaDeterministic < 0 || deltaRubric < 0) {
-            verdict = "🔴 分数下降！改坏了，请检查最近的改动。";
-        } else if (deltaDeterministic > 0 || deltaRubric > 0) {
-            verdict = "🟢 分数上升！改好了。";
-        } else {
-            verdict = "🟡 分数持平。";
-        }
+        // 判定收拢到 RegressionPolicy —— 此前这里的口径与 EvalReport.hasRegression()
+        // 不一致，导致报告正文说「改坏了」而结论说「无回归」
+        String verdict = RegressionPolicy.verdictOf(deltaDeterministic, deltaRubric);
 
         return ComparisonReport.builder()
                 .caseName(caseName)
