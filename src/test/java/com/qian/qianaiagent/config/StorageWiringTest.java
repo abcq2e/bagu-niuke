@@ -1,5 +1,6 @@
 package com.qian.qianaiagent.config;
 
+import com.qian.qianaiagent.interview.progress.ActiveSpecManager;
 import com.qian.qianaiagent.memory.ConversationAccess;
 import com.qian.qianaiagent.memory.ConversationSummarizer;
 import com.qian.qianaiagent.memory.FileBasedChatMemory;
@@ -34,9 +35,11 @@ class StorageWiringTest {
 
     @Configuration
     @EnableConfigurationProperties(StorageProperties.class)
-    // ConversationAccess / ConversationRetentionSweeper 是 @Component，
+    // ConversationAccess / ConversationRetentionSweeper / ActiveSpecManager 是 @Component，
     // ApplicationContextRunner 不做组件扫描，必须显式导入才验证得到
-    @Import({ChatMemoryConfig.class, ConversationAccess.class, ConversationRetentionSweeper.class})
+    // （扫尾器构造器里有 ActiveSpecManager，漏掉它这里会直接装配失败）
+    @Import({ChatMemoryConfig.class, ConversationAccess.class, ConversationRetentionSweeper.class,
+            ActiveSpecManager.class})
     static class TestConfig {
 
         /** ConversationSummarizer 需要一个 ChatModel，切片测试里不需要真的调 LLM */
