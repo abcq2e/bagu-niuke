@@ -17,25 +17,14 @@ if [ ! -f .env ]; then
   exit 9
 fi
 
-# 🔴 把 .env 注入进程环境。此前脚本只检查 .env 存在却从不读它 ——
-# 本地靠 application-local.yml 兜住才没暴露，CI 里没有那个文件，
-# API Key / 数据库密码就一个都传不进去。
-# 只导出「当前环境里还没有」的键，不覆盖调用方已显式设置的值。
-while IFS= read -r line || [ -n "$line" ]; do
-  case "$line" in ''|'#'*) continue ;; esac
-  key=${line%%=*}
-  # 去掉可能的 CR（.env 在 Windows 上可能存成 CRLF）
-  key=${key%$'\r'}
-  case "$key" in
-    ''|*[!A-Za-z0-9_]*) continue ;;
-  esac
-  # 已有值就不覆盖
-  if [ -z "${!key+x}" ]; then
-    value=${line#*=}
-    value=${value%$'\r'}
-    export "$key=$value"
-  fi
-done < .env
+# ⚠️ 这里**刻意不** source .env。
+#    .env 是给**容器化部署**用的：里面的 REDIS_HOST=redis 是 compose 的服务名。
+#    本地是直接用 maven 跑应用（Redis 在 localhost:16379），一旦把 .env 注入环境，
+#    应用就会去连一个解析不了的主机名 `redis`，反而跑不起来。
+#    本地靠 application-local.yml 提供密钥、靠 application.yml 的默认值提供地址端口；
+#    CI 里没有 application-local.yml，由 workflow 把变量注入进程环境
+#    （见 .github/workflows/eval.yml 的「准备 .env」一步，它会同时写入 $GITHUB_ENV）。
+#    这里的检查只是确保「本地跑的时候密钥文件确实存在」。
 
 echo "════ 开始离线评测回归检查 ════"
 echo "（这会真实调用 LLM，消耗 token 额度）"

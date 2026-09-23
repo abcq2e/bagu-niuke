@@ -72,6 +72,13 @@ jobs:
           JWT_SECRET=ci-only-jwt-secret-at-least-256-bits-long-for-ci-runs-only
           EOF
 
+          # 🔴 光写 .env 不够。脚本**刻意不** source 它 —— .env 是给容器化部署用的
+          #    （里面 REDIS_HOST=redis 是 compose 服务名），本地跑 maven 时 source 它
+          #    反而会连不上 Redis。CI 里没有 application-local.yml，
+          #    必须把变量直接注入后续步骤的进程环境。
+          #    .env 里没有注释和空行，格式与 $GITHUB_ENV 完全一致，直接追加即可。
+          cat .env >> "$GITHUB_ENV"
+
       - name: 启动依赖服务
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 
