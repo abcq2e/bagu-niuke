@@ -70,10 +70,30 @@ public class ActiveSpecManager {
         }
     }
 
-    /** 空闲多久后清理。对齐 QuizApp.evictExpiredEntries 的既有口径（2 小时）。 */
+    /**
+     * 空闲多久后<b>从内存缓存逐出</b>。对齐 QuizApp.evictExpiredEntries 的既有口径（2 小时）。
+     * <p>
+     * ⚠️ 这里不是「清理/删除」：落盘之后磁盘才是真相源，被逐出的条目下次
+     * {@link #getSpec(String)} 未命中时会由 {@link #loadSpec(String)} 原样回填，
+     * 用户不会因为 2 小时没说话就丢掉项目描述。<b>这是刻意的</b> ——
+     * 做了持久化之后，TTL 的职责就只剩「别让内存里的 {@code Map} 无界增长」。
+     * <p>
+     * 真正的删除只有两条路径：{@link #remove(String)}（用户删会话）与
+     * {@code ConversationRetentionSweeper}（保留策略清会话时同步清理）。
+     */
     private static final Duration IDLE_TTL = Duration.ofHours(2);
 
-    /** 项目描述 + 最后访问时间。 */
+    /**
+     * 项目描述 + 最后访问时间。
+     *
+     * <p>⚠️ {@code lastAccess} <b>只活在内存里</b>：{@link #touch(String, Entry)}
+     * 从不回写磁盘，{@link #saveSpec(String)} 只在 {@code updateSpec} 时被调用。
+     * 所以盘上序列化的 {@code lastAccess} 会<b>永久冻结</b>在最后一次 {@code updateSpec} 的时刻。
+     * <p>
+     * 后果：它<b>不是</b>一个可用的 TTL 时钟。服务重启后回填的条目，其 {@code lastAccess}
+     * 是陈旧的写入时间 —— 可能立刻满足 {@code lastAccess < cutoff} 而被逐出。这不影响正确性
+     * （逐出只是丢内存缓存，下次读照样回填），但别拿它做「多久没被访问」的统计或判定。
+     */
     private record Entry(String spec, long lastAccess) {
     }
 
@@ -115,7 +135,12 @@ public class ActiveSpecManager {
         return entry.spec();
     }
 
-    /** 续期 —— 被访问过就不算空闲。 */
+    /**
+     * 续期 —— 被访问过就不算空闲。
+     * <p>
+     * ⚠️ 只改内存，<b>不落盘</b>：每次读都写一次磁盘会让热路径付 IO 代价，不划算。
+     * 代价是盘上的 {@code lastAccess} 不随访问前进（详见 {@link Entry} 的说明）。
+     */
     private void touch(String chatId, Entry entry) {
         activeSpecs.replace(chatId, entry, new Entry(entry.spec(), System.currentTimeMillis()));
     }
@@ -178,7 +203,14 @@ public class ActiveSpecManager {
     }
 
     /**
-     * 判断指定会话是否有有效项目描述
+     * 判断指定会话是否有有效项目描述。
+     * <p>
+     * ⚠️ <b>只查内存缓存，不回落磁盘</b> —— 与 {@link #getSpec(String)} 不对称：
+     * 服务刚重启、条目还没被读过时，这里会返回 {@code false}，而 {@code getSpec} 能拿到值。
+     * 需要「磁盘也算数」的语义请直接用 {@code getSpec(chatId) != null}。
+     * <p>
+     * 故意保持这个行为：改成回落磁盘会让「本次进程内是否已加载」这个既有语义变化，
+     * 而现有调用方（测试）依赖的正是前者。
      */
     public boolean hasSpec(String chatId) {
         Entry entry = activeSpecs.get(chatId);
@@ -190,8 +222,11 @@ public class ActiveSpecManager {
      * <p>
      * 内存与磁盘<b>一并</b>清除。只清内存是不够的：磁盘文件还在时，后续任何
      * {@link #getSpec(String)} 都会走 {@link #loadSpec(String)} 把它「复活」——
-     * 用户删了会话，项目描述却又回来了；而 {@code .active-specs/} 下的文件除本方法外
-     * 没有任何删除路径（{@code evictExpired} 只清内存），会长期无界增长。
+     * 用户删了会话，项目描述却又回来了；而 {@code .active-specs/} 没有配额兜底
+     * （{@code evictExpired} 只逐出内存缓存），漏删就会长期无界增长。
+     * <p>
+     * 因此这里做成「谁删会话谁负责调」：目前仅有的两条会话删除路径 ——
+     * 用户删会话、以及 {@code ConversationRetentionSweeper} 的保留策略 —— 都必须调它。
      */
     public void remove(String chatId) {
         activeSpecs.remove(chatId);
@@ -200,12 +235,16 @@ public class ActiveSpecManager {
     }
 
     /**
-     * 清理空闲超过 {@code ttl} 的条目。
+     * 逐出空闲超过 {@code ttl} 的<b>内存缓存条目</b>（磁盘文件原样保留）。
+     * <p>
+     * 传的是 {@code activeSpecs}（内存 Map）而不是 {@link #remove(String)}，差别就在这里：
+     * 磁盘是真相源，被逐出的条目下次 {@link #getSpec(String)} 会由
+     * {@link #loadSpec(String)} 回填 —— 所以「逐出」不丢数据，只是释放内存。
      * <p>
      * 抽成纯方法（注入 {@code now}）以便单测，<b>不</b>把 {@code System.currentTimeMillis()}
      * 写死在内部 —— 那会让 2 小时的等待变成测试不可承受的成本。
      *
-     * @return 实际清理的条目数
+     * @return 实际逐出的条目数
      */
     public int evictExpired(long now, Duration ttl) {
         if (ttl == null || ttl.isNegative()) {
@@ -218,12 +257,14 @@ public class ActiveSpecManager {
                 .toList();
         expired.forEach(activeSpecs::remove);
         if (!expired.isEmpty()) {
-            log.info("🧹 清理空闲项目描述 {} 个", expired.size());
+            // 用「逐出」而不是「清理」：磁盘文件没动，下次 getSpec 会回填。
+            // 写成「清理」会让排障的人以为数据被删了（本项目就踩过这个措辞的坑）
+            log.info("🧹 逐出空闲项目描述内存缓存 {} 个（磁盘文件保留，下次读取回填）", expired.size());
         }
         return expired.size();
     }
 
-    /** 定时清理空闲条目。间隔可配，默认 30 分钟。 */
+    /** 定时逐出空闲条目。间隔可配，默认 30 分钟。 */
     @Scheduled(fixedDelayString = "${qian.memory.active-spec.evict-interval-ms:1800000}")
     public void evictExpiredScheduled() {
         evictExpired(System.currentTimeMillis(), IDLE_TTL);
@@ -254,7 +295,10 @@ public class ActiveSpecManager {
                 Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {
-            log.warn("保存项目描述失败: chatId={}, err={}", chatId, e.getMessage());
+            // error 而非 warn：这不是「缓存未命中」那类可容忍的降级 ——
+            // 用户刚更新了项目描述，但没落盘，下次重启就失忆（本类落盘要修的原始缺陷）。
+            // loadSpec/deleteSpecFiles 仍用 warn，它们的容错语义是对的。
+            log.error("保存项目描述失败: chatId={}, err={}", chatId, e.getMessage());
         }
     }
 
