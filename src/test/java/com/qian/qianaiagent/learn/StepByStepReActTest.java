@@ -13,7 +13,6 @@ import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.util.ArrayList;
@@ -29,7 +28,12 @@ import java.util.stream.Collectors;
 @Slf4j
 public class StepByStepReActTest {
 
-    @Qualifier("chatModel")
+    // 这里原先写的是 @Qualifier("chatModel")，但容器里<b>没有</b>名为 "chatModel" 的 bean
+    // （实际是 openAiChatModel / dashscopeChatModel / ollamaChatModel）。@Qualifier 先于
+    // @Primary 生效，按名字找不到任何候选 —— 是个一直没暴露的既有 bug（本测试需要
+    // PostgreSQL，本地跑不起来）。去掉 @Qualifier 后按类型解析，拿到的是 @Primary 的
+    // ResilientChatModel，即应用默认使用的那个模型：对本测试（演示怎么调模型）够用，
+    // 而且更贴近真实装配。
     @Autowired
     private ChatModel chatModel;
 
