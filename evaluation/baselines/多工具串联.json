@@ -20,5 +20,5 @@
   },
   "baselineDeterministicScore": -1,
   "baselineRubricScore": -1,
-  "notes": "覆盖「同一任务内先后调用 ≥2 个工具」的路径，验证 trace 步骤顺序与 maxSteps 预算。paramContains 全部留空 —— 工具参数由 LLM 自由生成，锁死子串会让用例随机失败（这条经验来自既有的 对比SpringAI与LangChain4j 用例）。分数 -1 表示尚未建立基线。"
+  "notes": "覆盖「同一任务内调用 ≥2 个工具」的路径，验证两个工具确实都被调用、以及 maxSteps 预算。注意 DeterministicScorer.checkToolCalls 是逐项 anyMatch，不校验先后顺序 —— 期望列表的顺序不构成约束。paramContains 全部留空 —— 工具参数由 LLM 自由生成，锁死子串会让用例随机失败（这条经验来自既有的 对比SpringAI与LangChain4j 用例）。分数 -1 表示尚未建立基线。"
 }

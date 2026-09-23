@@ -1,2 +1,6 @@
 /mvnw text eol=lf
 *.cmd text eol=crlf
+
+# shell 脚本必须保持 LF：本机 core.autocrlf=true，若检出成 CRLF，
+# Linux/CI 上会以 `bad interpreter: /usr/bin/env bash^M` 直接失败。
+*.sh text eol=lf
