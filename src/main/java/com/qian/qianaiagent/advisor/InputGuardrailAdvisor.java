@@ -16,6 +16,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import reactor.core.publisher.Flux;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -88,28 +89,48 @@ public class InputGuardrailAdvisor implements CallAdvisor, StreamAdvisor {
         return chain.nextStream(chatClientRequest);
     }
 
-    /** 取本轮用户输入做检测；取不到用户消息时放行（不因上游异常路径误拦）。 */
+    /**
+     * 检查本轮 prompt 里的<b>每一条</b> UserMessage，命中任一规则即拦截；
+     * 没有用户消息时放行（不因上游异常路径误拦）。
+     *
+     * <p><b>为什么不能只看最后一条</b>：Agent 的 ReAct 循环每一步都会把「下一步提示词」
+     * 作为新的 {@link UserMessage} 追加到消息列表末尾（见 {@code ToolCallAgent#think}），
+     * 于是「最后一条 UserMessage」变成了框架自己注入的提示词，用户真正的输入被挤到前面去 ——
+     * 只看最后一条会让<b>整条 Agent 路径的输入护栏完全失效</b>。
+     *
+     * <p>这不是纸上推演：2026-09-23 端到端验收实测，三种注入
+     * （指令覆盖 / 角色劫持 / 提示词刺探）打到 {@code /api/ai/agent/chat}
+     * <b>全部直达模型</b>，而面试路径 {@code /api/ai/chat} 全部正确拦截。
+     * 更隐蔽的是模型「自己拒绝了」这类注入，看着像护栏在起作用，
+     * 其实只是模型自身的对齐 —— 换个话术就可能绕过去。
+     *
+     * <p>代价：框架自己注入的提示词也会被检查。已确认它们很短
+     * （六十字上下，远低于 {@code LengthRule} 的两千字阈值）且不含规则关键词，不会误伤。
+     */
     private Optional<GuardrailVerdict> inspect(ChatClientRequest request) {
-        String userInput = lastUserText(request);
-        if (userInput == null) {
-            return Optional.empty();
-        }
-        Optional<GuardrailVerdict> verdict = ruleSet.check(userInput);
-        verdict.ifPresent(v -> log.warn("🛡️ 输入护栏拦截: rule={}, reason={}, inputLen={}",
-                v.ruleName(), v.reason(), userInput.length()));
-        return verdict;
-    }
-
-    /** 取最后一条 UserMessage 的文本；没有用户消息返回 null。 */
-    private String lastUserText(ChatClientRequest request) {
-        List<Message> messages = request.prompt().getInstructions();
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message m = messages.get(i);
-            if (m.getMessageType() == MessageType.USER) {
-                return m.getText();
+        for (String userInput : userTexts(request)) {
+            Optional<GuardrailVerdict> verdict = ruleSet.check(userInput);
+            if (verdict.isPresent()) {
+                log.warn("🛡️ 输入护栏拦截: rule={}, reason={}, inputLen={}",
+                        verdict.get().ruleName(), verdict.get().reason(), userInput.length());
+                return verdict;
             }
         }
-        return null;
+        return Optional.empty();
+    }
+
+    /** 取 prompt 里所有非空 UserMessage 的文本，按出现顺序。 */
+    private List<String> userTexts(ChatClientRequest request) {
+        List<String> texts = new ArrayList<>();
+        for (Message m : request.prompt().getInstructions()) {
+            if (m.getMessageType() == MessageType.USER) {
+                String text = m.getText();
+                if (text != null && !text.isBlank()) {
+                    texts.add(text);
+                }
+            }
+        }
+        return texts;
     }
 
     /** 构造一个不经过模型的响应，沿用原请求的 context 以免下游依赖丢失。 */
