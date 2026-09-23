@@ -21,7 +21,6 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.Optional;
 
 /**
  * 当前有效项目描述管理器（覆盖式 vs 对话历史的追加式）
@@ -188,9 +187,15 @@ public class ActiveSpecManager {
 
     /**
      * 清理会话（会话删除时调用）
+     * <p>
+     * 内存与磁盘<b>一并</b>清除。只清内存是不够的：磁盘文件还在时，后续任何
+     * {@link #getSpec(String)} 都会走 {@link #loadSpec(String)} 把它「复活」——
+     * 用户删了会话，项目描述却又回来了；而 {@code .active-specs/} 下的文件除本方法外
+     * 没有任何删除路径（{@code evictExpired} 只清内存），会长期无界增长。
      */
     public void remove(String chatId) {
         activeSpecs.remove(chatId);
+        deleteSpecFiles(chatId);
         log.info("🗑️ 已清除项目描述: chatId={}", chatId);
     }
 
@@ -266,6 +271,29 @@ public class ActiveSpecManager {
         } catch (IOException e) {
             log.warn("加载项目描述失败: chatId={}, err={}", chatId, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * 删除会话对应的描述文件，以及 {@link #saveSpec(String)} 可能残留的
+     * {@code .tmp}（那次 {@code move} 失败过的话，临时文件会留在盘上）。
+     * <p>
+     * {@code specDir == null}（未初始化）时静默跳过，与 {@code saveSpec}/{@code loadSpec}
+     * 同口径；{@code IOException} 只记 warn 不抛 —— 删会话不该因为一个描述文件删不掉而失败。
+     */
+    private void deleteSpecFiles(String chatId) {
+        if (specDir == null) {
+            return;
+        }
+        Path file = fileOf(chatId);
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        for (Path path : List.of(file, tmp)) {
+            try {
+                Files.deleteIfExists(path);
+            } catch (IOException e) {
+                log.warn("删除项目描述文件失败: chatId={}, path={}, err={}",
+                        chatId, path, e.getMessage());
+            }
         }
     }
 

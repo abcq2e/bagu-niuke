@@ -78,4 +78,36 @@ class ActiveSpecManagerPersistenceTest {
 
         assertThat(manager.getSpec("chat_3")).isEqualTo("有效描述");
     }
+
+    @Test
+    @DisplayName("remove 同步删除磁盘文件（含残留的 .tmp）")
+    void removeAlsoDeletesFile(@TempDir Path root) throws Exception {
+        ActiveSpecManager manager = newManager(root);
+        manager.updateSpec("chat_4", "待删除的项目描述");
+
+        Path dir = root.resolve(".active-specs");
+        Path file = dir.resolve("chat_4.json");
+        assertThat(file).exists();
+
+        // 模拟 saveSpec 的 ATOMIC_MOVE 失败后留在盘上的临时文件
+        Path tmp = dir.resolve("chat_4.json.tmp");
+        java.nio.file.Files.writeString(tmp, "{}");
+
+        manager.remove("chat_4");
+
+        assertThat(file).doesNotExist();
+        assertThat(tmp).doesNotExist();
+    }
+
+    @Test
+    @DisplayName("remove 后重建实例（模拟重启）不会把描述从磁盘复活")
+    void removePreventsResurrection(@TempDir Path root) {
+        ActiveSpecManager first = newManager(root);
+        first.updateSpec("chat_5", "删除后不该复活");
+
+        first.remove("chat_5");
+
+        // 重启：全新实例内存为空，若磁盘文件还在就会被 loadSpec 复活
+        assertThat(newManager(root).getSpec("chat_5")).isNull();
+    }
 }
