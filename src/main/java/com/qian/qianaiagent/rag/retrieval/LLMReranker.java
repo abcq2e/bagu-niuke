@@ -1,5 +1,6 @@
 package com.qian.qianaiagent.rag.retrieval;
 
+import com.qian.qianaiagent.agent.llm.ResilientChatModel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
@@ -119,6 +120,9 @@ public class LLMReranker {
                     .sorted(Comparator.comparingDouble(LLMReranker::scoreOf).reversed())
                     .limit(topN)
                     .toList();
+        } catch (ResilientChatModel.UnavailableReplyException e) {
+            // 「主备全挂」不是「重排没打成」，不能退化成静默的原序 —— 见 scoreBatch 的说明
+            throw e;
         } catch (Exception e) {
             // Step 6: 降级 —— LLM 整体调用失败，退回原始排序的前 topN 条
             log.warn("LLM Reranker 调用失败，降级为原始排序前 {} 条：{}", topN, e.getMessage());
@@ -135,6 +139,16 @@ public class LLMReranker {
     private List<Document> scoreBatch(String query, List<Document> batch) {
         try {
             String raw = chatModel.call(buildPrompt(query, batch));
+
+            // 兜底话术里一个数字都没有 → parseScores 返回空 → 「分数个数不匹配」→
+            // 该批静默保留原始顺序。日志看上去与「这一批没解析好」一模一样，
+            // 于是「模型整体挂了」被伪装成「重排效果一般」，谁也发现不了。
+            // 因此这一种失败必须穿出本方法的降级 catch（见下方的 UnavailableReplyException 分支）。
+            if (ResilientChatModel.isUnavailableReply(raw)) {
+                throw new ResilientChatModel.UnavailableReplyException(
+                        "LLMReranker: LLM 返回兜底话术（主备全挂），重排分数无从谈起");
+            }
+
             List<Double> scores = parseScores(raw);
 
             // 解析出的分数个数必须与文档数对齐，否则视为解析失败，保留原始顺序
@@ -150,6 +164,11 @@ public class LLMReranker {
                 scored.add(batch.get(i).mutate().score(scores.get(i)).build());
             }
             return scored;
+        } catch (ResilientChatModel.UnavailableReplyException e) {
+            // 与「这一批没解析好」的区别：那是尽力而为的正常降级（保留原序、继续跑），
+            // 这是全局故障 —— 后续每一批都会得到同一段兜底话术，把整次重排变成
+            // 「不看分数、保持原序」的哑操作，且调用方完全无感。故直接上抛。
+            throw e;
         } catch (Exception e) {
             log.warn("Rerank 单批打分失败，该批 {} 条保留原始顺序：{}", batch.size(), e.getMessage());
             return batch;

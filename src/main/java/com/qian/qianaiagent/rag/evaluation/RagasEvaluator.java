@@ -1,5 +1,6 @@
 package com.qian.qianaiagent.rag.evaluation;
 
+import com.qian.qianaiagent.agent.llm.ResilientChatModel;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -42,8 +43,12 @@ public class RagasEvaluator {
      * RAGAS 评估的每次 LLM 调用都绕过了超时/重试/熔断/降级。构造器注入按<b>类型</b>解析，
      * {@code @Primary} 才会赢。
      *
-     * <p>同类的 {@code primaryEmbeddingModel} 仍是 {@code @Resource}：{@code EmbeddingModel}
-     * 没有加 {@code @Primary} 的装饰器，字段注入不会造成「绕开保护」的缺口，无需一并改。
+     * <p>同类的 {@code primaryEmbeddingModel} 仍是 {@code @Resource}：这里的理由与
+     * {@code ChatModel} 不同 —— {@code EmbeddingModel} <b>确实</b>有一个 {@code @Primary}
+     * 的装饰器（见 {@code config/EmbeddingConfig} 的 {@code primaryEmbeddingModel}），
+     * 但 {@code @Resource} 先按字段名匹配，而字段名恰好就叫 {@code primaryEmbeddingModel}，
+     * 于是按名命中与按类型命中<b>落到同一个 bean</b>，两条路径拿到的是同一实例，
+     * 不存在「绕开保护」的缺口，因此无需一并改成构造器注入。
      */
     private final ChatModel chatModel;
 
@@ -227,6 +232,7 @@ public class RagasEvaluator {
                 .user(reverseGenPrompt)
                 .call()
                 .content();
+        requireRealReply(response, "Answer Relevance 的反向生成");
 
         if (response == null || response.isBlank()) {
             log.warn("LLM 未能反向生成问题，Answer Relevance 返回 0");
@@ -363,6 +369,7 @@ public class RagasEvaluator {
                 .user(prompt)
                 .call()
                 .content();
+        requireRealReply(response, "声明提取（extractClaims）");
 
         if (response == null || response.isBlank()) {
             log.warn("LLM 未返回任何声明");
@@ -406,8 +413,28 @@ public class RagasEvaluator {
                 .user(prompt)
                 .call()
                 .content();
+        requireRealReply(response, "声明验证（verifyClaimByContext）");
 
         return response != null && response.trim().toUpperCase().contains("YES");
+    }
+
+    /**
+     * 拒收兜底话术 —— 它来自「主备全挂」，不是模型答案。
+     *
+     * <p>不拦会怎样：这里是 RAGAS 的每一项子计算。兜底话术会被当成
+     * 「生成的问题」「提取出的声明」，进而算出一串<b>看起来正常的分数</b>
+     * 并写进 {@code data/evals/*.json}；更糟的是被当成「答案不含幻觉」的依据。
+     * 宁可抛异常让调用方看到「这次评估没做成」，也不要落一份假指标。
+     *
+     * <p>抛出的 {@link ResilientChatModel.UnavailableReplyException} 是 RuntimeException，
+     * 调用方（{@code EvaluationRecorder}）的 {@code catch (Exception)} 会接住并只记日志，
+     * 不落盘 —— 与「模型挂了 → 这次评估作废」的预期一致，也不会影响面试主流程。
+     */
+    private static void requireRealReply(String response, String stage) {
+        if (ResilientChatModel.isUnavailableReply(response)) {
+            throw new ResilientChatModel.UnavailableReplyException(
+                    "RagasEvaluator: LLM 返回兜底话术（主备全挂），" + stage + "拿不到真实模型输出");
+        }
     }
 
     /**

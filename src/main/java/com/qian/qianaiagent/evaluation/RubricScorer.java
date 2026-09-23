@@ -2,6 +2,7 @@ package com.qian.qianaiagent.evaluation;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qian.qianaiagent.agent.llm.ResilientChatModel;
 import com.qian.qianaiagent.agent.trace.AgentTrace;
 import com.qian.qianaiagent.agent.trace.TraceStep;
 import lombok.AllArgsConstructor;
@@ -165,6 +166,15 @@ public class RubricScorer {
         // 1. 调用 LLM
         String resp = ChatClient.builder(chatModel).build()
                 .prompt().user(prompt).call().content();
+
+        // 1.5 兜底话术必须响亮失败，不能当评分 JSON 往下走。
+        //     否则 JSON 解析必然失败 → 落一份 totalScore=0、comment 为「JSON 解析失败」的
+        //     评分记录。那是「看起来合法的坏数据」，比异常危险得多：
+        //     它会被写进 BaselineManager 的 baseline，把「模型挂了」伪装成「Agent 表现差」。
+        if (ResilientChatModel.isUnavailableReply(resp)) {
+            throw new ResilientChatModel.UnavailableReplyException(
+                    "RubricScorer: LLM 返回兜底话术（主备全挂），拒绝按评分 JSON 解析");
+        }
 
         if (resp == null || resp.isBlank()) {
             log.error("LLM 返回空响应");
