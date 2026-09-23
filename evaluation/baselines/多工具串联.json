@@ -1,7 +1,15 @@
 {
   "caseName": "多工具串联",
   "query": "请先检索本地知识库了解 Spring AI，再用搜索引擎查一下它的最新版本动态，最后用两三句话总结。",
-  "createdAt": "2026-09-22T10:00:00",
+  "createdAt": [
+    2026,
+    9,
+    23,
+    15,
+    14,
+    45,
+    156033700
+  ],
   "expectedBehavior": {
     "expectedToolCalls": [
       {
@@ -15,10 +23,12 @@
         "resultContains": null
       }
     ],
-    "expectedResponseKeywords": ["Spring AI"],
+    "expectedResponseKeywords": [
+      "Spring AI"
+    ],
     "maxToolCalls": 8
   },
-  "baselineDeterministicScore": -1,
-  "baselineRubricScore": -1,
-  "notes": "覆盖「同一任务内调用 ≥2 个工具」的路径，验证两个工具确实都被调用、以及 maxSteps 预算。注意 DeterministicScorer.checkToolCalls 是逐项 anyMatch，不校验先后顺序 —— 期望列表的顺序不构成约束。paramContains 全部留空 —— 工具参数由 LLM 自由生成，锁死子串会让用例随机失败（这条经验来自既有的 对比SpringAI与LangChain4j 用例）。分数 -1 表示尚未建立基线。"
+  "baselineDeterministicScore": 100,
+  "baselineRubricScore": 60,
+  "notes": "✅ 基线建立于 2026-09-23（真实评测运行，模型 deepseek-chat）。确定性 100/100，全部用例均 ≥90，高于 60 的及格线。Rubric 60/100 仅供参考 —— 实测同版本重跑波动可达 ±13 分，不参与回归判定（见 RegressionPolicy 类注释）。"
 }

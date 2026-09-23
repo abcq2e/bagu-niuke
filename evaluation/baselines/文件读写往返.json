@@ -1,7 +1,15 @@
 {
   "caseName": "文件读写往返",
   "query": "请把「评估测试内容」这行字写入文件 eval-test.txt，然后把文件读回来确认内容。",
-  "createdAt": "2026-09-10T10:00:00",
+  "createdAt": [
+    2026,
+    9,
+    23,
+    15,
+    16,
+    7,
+    149847900
+  ],
   "expectedBehavior": {
     "expectedToolCalls": [
       {
@@ -15,10 +23,12 @@
         "resultContains": null
       }
     ],
-    "expectedResponseKeywords": ["评估测试内容"],
+    "expectedResponseKeywords": [
+      "评估测试内容"
+    ],
     "maxToolCalls": 5
   },
-  "baselineDeterministicScore": -1,
-  "baselineRubricScore": -1,
-  "notes": "⚠️ 分数为 -1 表示尚未建立基线。首次运行 eval 时会自动建立。此用例不依赖网络与知识库，适合做稳定性测试。"
+  "baselineDeterministicScore": 100,
+  "baselineRubricScore": 100,
+  "notes": "✅ 基线建立于 2026-09-23（真实评测运行，模型 deepseek-chat）。确定性 100/100，全部用例均 ≥90，高于 60 的及格线。Rubric 100/100 仅供参考 —— 实测同版本重跑波动可达 ±13 分，不参与回归判定（见 RegressionPolicy 类注释）。"
 }

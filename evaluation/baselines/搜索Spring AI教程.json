@@ -1,7 +1,15 @@
 {
   "caseName": "搜索Spring AI教程",
   "query": "请使用搜索引擎（searchWeb 工具）查找 Spring AI 的官方教程，用两三句话概括它大致包含哪些内容模块。",
-  "createdAt": "2026-09-10T10:00:00",
+  "createdAt": [
+    2026,
+    9,
+    23,
+    15,
+    28,
+    15,
+    234370100
+  ],
   "expectedBehavior": {
     "expectedToolCalls": [
       {
@@ -10,10 +18,12 @@
         "resultContains": null
       }
     ],
-    "expectedResponseKeywords": ["Spring AI"],
+    "expectedResponseKeywords": [
+      "Spring AI"
+    ],
     "maxToolCalls": 5
   },
-  "baselineDeterministicScore": -1,
-  "baselineRubricScore": -1,
-  "notes": "⚠️ 分数为 -1 表示尚未建立基线。首次运行 eval 时会自动建立。"
+  "baselineDeterministicScore": 100,
+  "baselineRubricScore": 60,
+  "notes": "✅ 基线建立于 2026-09-23（真实评测运行，模型 deepseek-chat）。确定性 100/100，全部用例均 ≥90，高于 60 的及格线。Rubric 60/100 仅供参考 —— 实测同版本重跑波动可达 ±13 分，不参与回归判定（见 RegressionPolicy 类注释）。"
 }

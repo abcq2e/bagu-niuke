@@ -1,7 +1,15 @@
 {
   "caseName": "工具失败自愈",
   "query": "请读取文件 /nonexistent-dir/definitely-missing.txt 并把内容告诉我。如果读不到，就直接说明读不到，不要编造内容。",
-  "createdAt": "2026-09-22T10:00:00",
+  "createdAt": [
+    2026,
+    9,
+    23,
+    15,
+    15,
+    37,
+    767977000
+  ],
   "expectedBehavior": {
     "expectedToolCalls": [
       {
@@ -13,7 +21,7 @@
     "expectedResponseKeywords": [],
     "maxToolCalls": 5
   },
-  "baselineDeterministicScore": -1,
-  "baselineRubricScore": -1,
-  "notes": "覆盖工具失败路径：readFile 必然失败，验证 ToolCallAgent 的失败计数与自愈提示生效，且 Agent 不会编造文件内容。expectedResponseKeywords 留空是刻意的 —— 无法预知模型用哪个词表达「读不到」，锁死关键词会随机失败。该用例同时检验 RubricScorer 的幻觉检测：编造内容会导致 Rubric 的「忠实度」维度扣分。"
+  "baselineDeterministicScore": 100,
+  "baselineRubricScore": 94,
+  "notes": "✅ 基线建立于 2026-09-23（真实评测运行，模型 deepseek-chat）。确定性 100/100，全部用例均 ≥90，高于 60 的及格线。Rubric 94/100 仅供参考 —— 实测同版本重跑波动可达 ±13 分，不参与回归判定（见 RegressionPolicy 类注释）。"
 }
