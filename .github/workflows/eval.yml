@@ -1,0 +1,59 @@
+name: Agent 评测回归
+
+on:
+  # 只跑手动触发与 PR —— 不跑 push，避免每次提交都烧 token
+  workflow_dispatch:
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: qian_ai_agent
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: 准备 .env
+        run: |
+          cat > .env <<'EOF'
+          SPRING_AI_OPENAI_API_KEY=${{ secrets.SPRING_AI_OPENAI_API_KEY }}
+          SPRING_AI_DASHSCOPE_API_KEY=${{ secrets.SPRING_AI_DASHSCOPE_API_KEY }}
+          EOF
+
+      - name: 跑评测回归
+        run: ./scripts/eval-regression.sh
+
+      - name: 上传评测报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: logs/eval/
